@@ -136,10 +136,25 @@ If you re-pair the device with any app, the Local Key changes. Get the new one f
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
+
+The MIT License allows you to:
+- ✅ Use this software for any purpose
+- ✅ Copy, modify, and distribute it
+- ✅ Include it in proprietary applications
+
+The only requirement is to include the license and copyright notice.
+
+## Disclaimer
+
+This is an unofficial integration. Inkbird is not affiliated with this project. Use at your own risk.
 
 ## Credits
 
 - Built for Home Assistant
 - Uses [tinytuya](https://github.com/jasonacox/tinytuya) for local Tuya protocol communication
 - First integration to provide local control of Inkbird irrigation controllers
+
+---
+
+**Questions or Issues?** [Open an issue on GitHub](https://github.com/ac-uy/ha-inkbird-irrigation/issues)

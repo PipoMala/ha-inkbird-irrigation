@@ -52,9 +52,12 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
         return switch_state or countdown > 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Open the zone valve."""
+        """Open the zone valve with the configured duration."""
+        from .number import _zone_durations
+        entry_id = self.coordinator.entry.entry_id
+        duration = _zone_durations.get(entry_id, {}).get(self._zone, 30)
         await self.hass.async_add_executor_job(
-            self.coordinator.api.turn_on_zone, self._zone
+            self.coordinator.api.turn_on_zone, self._zone, duration
         )
         await self.coordinator.async_request_refresh()
 

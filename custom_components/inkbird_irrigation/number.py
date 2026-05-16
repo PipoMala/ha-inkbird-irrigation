@@ -1,10 +1,19 @@
-"""Number platform for Inkbird Irrigation — placeholder for future duration control."""
+"""Number platform for Inkbird Irrigation — zone duration settings."""
 
 from __future__ import annotations
 
+from homeassistant.components.number import NumberDeviceClass, NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import DOMAIN, NUM_ZONES
+from .coordinator import InkbirdCoordinator
+from .entity import InkbirdEntity
+
+# Store duration preferences locally (not on device)
+_zone_durations: dict[str, dict[int, int]] = {}
 
 
 async def async_setup_entry(
@@ -12,8 +21,39 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Inkbird number entities (none for now)."""
-    # Duration control DP not yet discovered.
-    # The device uses a fixed 30-minute run time.
-    # DP 25-30 are read-only elapsed time counters, not writable duration settings.
-    async_add_entities([])
+    """Set up Inkbird duration number entities."""
+    coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
+    _zone_durations.setdefault(entry.entry_id, {z: 30 for z in range(1, NUM_ZONES + 1)})
+    async_add_entities(
+        InkbirdZoneDuration(coordinator, zone) for zone in range(1, NUM_ZONES + 1)
+    )
+
+
+class InkbirdZoneDuration(InkbirdEntity, NumberEntity):
+    """Number entity for setting zone watering duration (used on next turn-on)."""
+
+    _attr_device_class = NumberDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_min_value = 1
+    _attr_native_max_value = 180
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+    _attr_icon = "mdi:clock-time-four-outline"
+
+    def __init__(self, coordinator: InkbirdCoordinator, zone: int) -> None:
+        super().__init__(coordinator)
+        self._zone = zone
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_zone_{zone}_duration"
+        self._attr_name = f"Zone {zone} duration"
+
+    @property
+    def native_value(self) -> float:
+        """Return the current duration setting."""
+        entry_id = self.coordinator.entry.entry_id
+        return _zone_durations.get(entry_id, {}).get(self._zone, 30)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the zone duration (used on next turn-on)."""
+        entry_id = self.coordinator.entry.entry_id
+        _zone_durations.setdefault(entry_id, {})[self._zone] = int(value)
+        self.async_write_ha_state()

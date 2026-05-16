@@ -27,18 +27,23 @@ Before installing this integration, you need your device's **Local Key** from th
 ### Getting Your Device Credentials
 
 1. **Create a Tuya IoT account** at https://iot.tuya.com
-2. **Create a Cloud Project** → select "Smart Home" and your data center region
-3. **Pair your IIC-600 with the Tuya Smart app** (not the Inkbird app):
-   - Remove the device from the Inkbird app
-   - Download the **Tuya Smart** app
-   - Add the IIC-600 as a new device in Tuya Smart
-4. **Link your Tuya Smart account** to the IoT Platform:
-   - Go to Devices → Link Tuya App Account → scan QR with Tuya Smart app
-5. **Get the Local Key**:
-   - Go to API Explorer → Device Management → Get Device Information
-   - Enter your Device ID (find it via the Tuya Smart app or network scan)
-   - The response contains the `local_key`
+2. **Create a Cloud Project** → select "Smart Home" as development method and your data center region (e.g., Central Europe for EU)
+3. **Pair your IIC-600 with the Smart Life app** (not the Inkbird app):
+   - Remove the device from the Inkbird app first
+   - Download the **Smart Life** app (or **Tuya Smart** app)
+   - Reset the IIC-600 to pairing mode and add it as a new device in Smart Life
+4. **Link your Smart Life account** to the IoT Platform:
+   - Go to Devices → Link Tuya App Account → scan the QR code with the Smart Life app
+   - Make sure the data center matches your Smart Life account region
+5. **Get the Local Key** via API Explorer:
+   - Go to Cloud → API Explorer → Device Management → Get Device Information
+   - Enter your Device ID and click Send Request
+   - The response JSON contains the `local_key` field
 6. **Find the device IP** on your router (look for the IIC-600 or run `python -m tinytuya scan`)
+
+> ⚠️ **Important**: Set a **static IP** for your IIC-600 in your router's DHCP settings. If the IP changes, the integration will lose connection and you'll need to reconfigure it.
+
+> 💡 **Tip**: If you don't know your Device ID, run `python -m tinytuya scan` on a computer on the same network — it will find Tuya devices and show their IDs.
 
 ### Device Credentials You Need
 

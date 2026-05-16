@@ -45,7 +45,11 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if the zone valve is open."""
-        return self.coordinator.api.device.zone_active.get(self._zone, False)
+        # The device doesn't reliably report DP switch as True while running.
+        # Use countdown > 0 as the active indicator instead.
+        countdown = self.coordinator.api.device.zone_countdown.get(self._zone, 0)
+        switch_state = self.coordinator.api.device.zone_active.get(self._zone, False)
+        return switch_state or countdown > 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Open the zone valve."""

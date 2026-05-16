@@ -97,6 +97,9 @@ class InkbirdAPI:
         if not self._tuya:
             return False
         try:
+            # Reconnect each poll to avoid stale socket
+            self._tuya = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
+            self._tuya.set_version(TUYA_VERSION)
             status = self._tuya.status()
             if status and "dps" in status:
                 self.device.online = True

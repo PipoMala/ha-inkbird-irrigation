@@ -113,16 +113,13 @@ class InkbirdAPI:
             return False
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 10) -> bool:
-        """Turn on a zone for the specified duration."""
+        """Turn on a zone. Duration is controlled by the device's schedule."""
         if not self._tuya or zone < 1 or zone > NUM_ZONES:
             return False
         try:
-            # Set duration first, then turn on
-            dp_duration = DP_ZONE_DURATION[zone]
             dp_switch = DP_ZONE_SWITCH[zone]
-            self._tuya.set_value(dp_duration, duration_minutes)
             self._tuya.set_value(dp_switch, True)
-            _LOGGER.debug("Zone %d turned ON for %d minutes", zone, duration_minutes)
+            _LOGGER.debug("Zone %d turned ON", zone)
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to turn on zone %d: %s", zone, exc)

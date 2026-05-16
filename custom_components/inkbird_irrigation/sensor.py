@@ -27,6 +27,10 @@ async def async_setup_entry(
     for zone in range(1, NUM_ZONES + 1):
         entities.append(InkbirdZoneCountdownSensor(coordinator, zone))
 
+    # Zone elapsed time sensors
+    for zone in range(1, NUM_ZONES + 1):
+        entities.append(InkbirdZoneElapsedSensor(coordinator, zone))
+
     # System sensors
     entities.append(InkbirdModeSensor(coordinator))
 
@@ -37,7 +41,7 @@ class InkbirdZoneCountdownSensor(InkbirdEntity, SensorEntity):
     """Sensor showing remaining time for a zone."""
 
     _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_icon = "mdi:timer-outline"
 
     def __init__(self, coordinator: InkbirdCoordinator, zone: int) -> None:
@@ -48,8 +52,27 @@ class InkbirdZoneCountdownSensor(InkbirdEntity, SensorEntity):
 
     @property
     def native_value(self) -> int:
-        """Return the countdown in seconds."""
+        """Return the countdown in minutes."""
         return self.coordinator.api.device.zone_countdown.get(self._zone, 0)
+
+
+class InkbirdZoneElapsedSensor(InkbirdEntity, SensorEntity):
+    """Sensor showing elapsed time for a zone."""
+
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_icon = "mdi:timer-check-outline"
+
+    def __init__(self, coordinator: InkbirdCoordinator, zone: int) -> None:
+        super().__init__(coordinator)
+        self._zone = zone
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_zone_{zone}_elapsed"
+        self._attr_name = f"Zone {zone} time elapsed"
+
+    @property
+    def native_value(self) -> int:
+        """Return the elapsed time in minutes."""
+        return self.coordinator.api.device.zone_duration.get(self._zone, 0)
 
 
 class InkbirdModeSensor(InkbirdEntity, SensorEntity):

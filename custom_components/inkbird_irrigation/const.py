@@ -15,8 +15,12 @@ DP_ZONE_SWITCH = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
 # Zone countdown timers (int): seconds remaining
 DP_ZONE_COUNTDOWN = {1: 13, 2: 14, 3: 15, 4: 16, 5: 17, 6: 18}
 
-# Zone duration settings (int): minutes to run
-DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}
+# Zone elapsed time counters (int): minutes elapsed since zone started
+DP_ZONE_ELAPSED = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}
+
+# Zone duration settings — not yet discovered which DP controls this
+# The device appears to use a fixed 30-minute default
+DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}  # placeholder
 
 # System DPs
 DP_SYSTEM_POWER = 40        # str: "on" / "off"

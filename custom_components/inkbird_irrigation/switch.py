@@ -24,9 +24,20 @@ async def async_setup_entry(
 ) -> None:
     """Set up Inkbird zone switches."""
     coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
-    async_add_entities(
-        InkbirdZoneSwitch(coordinator, zone) for zone in range(1, NUM_ZONES + 1)
-    )
+    
+    entities: list[SwitchEntity] = []
+    
+    # Zone switches
+    for zone in range(1, NUM_ZONES + 1):
+        entities.append(InkbirdZoneSwitch(coordinator, zone))
+    
+    # System switches
+    entities.append(InkbirdMainValveSwitch(coordinator))
+    entities.append(InkbirdPowerSwitch(coordinator))
+    entities.append(InkbirdRainSensorSwitch(coordinator))
+    entities.append(InkbirdSkipScheduleSwitch(coordinator))
+    
+    async_add_entities(entities)
 
 
 class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
@@ -65,5 +76,125 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
         """Close the zone valve."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_off_zone, self._zone
+        )
+        await self.coordinator.async_request_refresh()
+
+
+class InkbirdMainValveSwitch(InkbirdEntity, SwitchEntity):
+    """Switch for the main valve control."""
+
+    _attr_icon = "mdi:valve"
+
+    def __init__(self, coordinator: InkbirdCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_main_valve"
+        self._attr_name = "Main valve"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if main valve is on."""
+        return self.coordinator.api.device.system_power == "on"
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on main valve."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 40, "on"
+        )
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off main valve."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 40, "off"
+        )
+        await self.coordinator.async_request_refresh()
+
+
+class InkbirdPowerSwitch(InkbirdEntity, SwitchEntity):
+    """Switch for the power control."""
+
+    _attr_icon = "mdi:power"
+
+    def __init__(self, coordinator: InkbirdCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_power"
+        self._attr_name = "Power"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if power is on."""
+        return self.coordinator.api.device.power_switch
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn on."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 102, True
+        )
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn off."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 102, False
+        )
+        await self.coordinator.async_request_refresh()
+
+
+class InkbirdRainSensorSwitch(InkbirdEntity, SwitchEntity):
+    """Switch for the rain sensor."""
+
+    _attr_icon = "mdi:weather-rainy"
+
+    def __init__(self, coordinator: InkbirdCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_rain_sensor"
+        self._attr_name = "Rain sensor"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if rain sensor is enabled."""
+        return self.coordinator.api.device.rain_sensor_enabled
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable rain sensor."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 107, True
+        )
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable rain sensor."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 107, False
+        )
+        await self.coordinator.async_request_refresh()
+
+
+class InkbirdSkipScheduleSwitch(InkbirdEntity, SwitchEntity):
+    """Switch to skip/pause scheduled irrigation."""
+
+    _attr_icon = "mdi:calendar-remove"
+
+    def __init__(self, coordinator: InkbirdCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_skip_schedule"
+        self._attr_name = "Skip schedule"
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if schedule is being skipped."""
+        return self.coordinator.api.device.skip_schedule
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Skip schedule."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 43, True
+        )
+        await self.coordinator.async_request_refresh()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Resume schedule."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 43, False
         )
         await self.coordinator.async_request_refresh()

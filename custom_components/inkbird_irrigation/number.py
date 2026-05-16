@@ -24,9 +24,13 @@ async def async_setup_entry(
     """Set up Inkbird duration number entities."""
     coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
     _zone_durations.setdefault(entry.entry_id, {z: 30 for z in range(1, NUM_ZONES + 1)})
-    async_add_entities(
-        InkbirdZoneDuration(coordinator, zone) for zone in range(1, NUM_ZONES + 1)
-    )
+    
+    entities: list[NumberEntity] = []
+    for zone in range(1, NUM_ZONES + 1):
+        entities.append(InkbirdZoneDuration(coordinator, zone))
+    entities.append(InkbirdSeasonalAdjust(coordinator))
+    
+    async_add_entities(entities)
 
 
 class InkbirdZoneDuration(InkbirdEntity, NumberEntity):
@@ -57,3 +61,31 @@ class InkbirdZoneDuration(InkbirdEntity, NumberEntity):
         entry_id = self.coordinator.entry.entry_id
         _zone_durations.setdefault(entry_id, {})[self._zone] = int(value)
         self.async_write_ha_state()
+
+
+class InkbirdSeasonalAdjust(InkbirdEntity, NumberEntity):
+    """Number entity for seasonal adjustment percentage."""
+
+    _attr_native_unit_of_measurement = "%"
+    _attr_native_min_value = 0
+    _attr_native_max_value = 100
+    _attr_native_step = 1
+    _attr_mode = NumberMode.BOX
+    _attr_icon = "mdi:leaf"
+
+    def __init__(self, coordinator: InkbirdCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_seasonal_adjust"
+        self._attr_name = "Seasonal adjustment"
+
+    @property
+    def native_value(self) -> float:
+        """Return the current seasonal adjustment."""
+        return self.coordinator.api.device.seasonal_adjust
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Set the seasonal adjustment."""
+        await self.hass.async_add_executor_job(
+            self.coordinator.api.set_dp, 109, int(value)
+        )
+        await self.coordinator.async_request_refresh()

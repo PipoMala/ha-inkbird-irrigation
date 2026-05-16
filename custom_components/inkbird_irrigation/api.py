@@ -8,10 +8,14 @@ from typing import Any
 import tinytuya
 
 from .const import (
+    DP_ACTIVE_ZONE,
+    DP_AUTO_REMAINING,
     DP_MODE,
-    DP_RAIN_DELAY_ACTIVE,
-    DP_RAIN_DELAY_DURATION,
-    DP_SCHEDULE_ENABLED,
+    DP_POWER_SWITCH,
+    DP_QUEUED_ZONE,
+    DP_RAIN_SENSOR_ENABLED,
+    DP_SEASONAL_ADJUST,
+    DP_SKIP_SCHEDULE,
     DP_SYSTEM_POWER,
     DP_ZONE_COUNTDOWN,
     DP_ZONE_DURATION,
@@ -30,9 +34,13 @@ class InkbirdDevice:
         self.online: bool = False
         self.system_power: str = "on"
         self.mode: str = "auto"
-        self.schedule_enabled: bool = True
-        self.rain_delay_active: bool = False
-        self.rain_delay_duration: int = 0
+        self.power_switch: bool = True
+        self.skip_schedule: bool = False
+        self.rain_sensor_enabled: bool = True
+        self.seasonal_adjust: int = 0
+        self.auto_remaining: int = 0
+        self.active_zone: int = 0
+        self.queued_zone: int = 0
 
         # Per-zone state
         self.zone_active: dict[int, bool] = {z: False for z in range(1, NUM_ZONES + 1)}
@@ -57,12 +65,20 @@ class InkbirdDevice:
             self.system_power = dps[str(DP_SYSTEM_POWER)]
         if str(DP_MODE) in dps:
             self.mode = dps[str(DP_MODE)]
-        if str(DP_SCHEDULE_ENABLED) in dps:
-            self.schedule_enabled = bool(dps[str(DP_SCHEDULE_ENABLED)])
-        if str(DP_RAIN_DELAY_ACTIVE) in dps:
-            self.rain_delay_active = bool(dps[str(DP_RAIN_DELAY_ACTIVE)])
-        if str(DP_RAIN_DELAY_DURATION) in dps:
-            self.rain_delay_duration = int(dps[str(DP_RAIN_DELAY_DURATION)])
+        if str(DP_POWER_SWITCH) in dps:
+            self.power_switch = bool(dps[str(DP_POWER_SWITCH)])
+        if str(DP_SKIP_SCHEDULE) in dps:
+            self.skip_schedule = bool(dps[str(DP_SKIP_SCHEDULE)])
+        if str(DP_RAIN_SENSOR_ENABLED) in dps:
+            self.rain_sensor_enabled = bool(dps[str(DP_RAIN_SENSOR_ENABLED)])
+        if str(DP_SEASONAL_ADJUST) in dps:
+            self.seasonal_adjust = int(dps[str(DP_SEASONAL_ADJUST)])
+        if str(DP_AUTO_REMAINING) in dps:
+            self.auto_remaining = int(dps[str(DP_AUTO_REMAINING)])
+        if str(DP_ACTIVE_ZONE) in dps:
+            self.active_zone = int(dps[str(DP_ACTIVE_ZONE)])
+        if str(DP_QUEUED_ZONE) in dps:
+            self.queued_zone = int(dps[str(DP_QUEUED_ZONE)])
 
 
 class InkbirdAPI:
@@ -153,4 +169,16 @@ class InkbirdAPI:
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to set duration for zone %d: %s", zone, exc)
+            return False
+
+    def set_dp(self, dp: int, value: Any) -> bool:
+        """Set a single data point value."""
+        if not self._tuya:
+            return False
+        try:
+            self._tuya.set_value(dp, value)
+            _LOGGER.debug("Set DP %d = %r", dp, value)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("Failed to set DP %d: %s", dp, exc)
             return False

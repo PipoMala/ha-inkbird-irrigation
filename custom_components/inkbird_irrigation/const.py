@@ -23,11 +23,15 @@ DP_ZONE_ELAPSED = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}
 DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}  # placeholder
 
 # System DPs
-DP_SYSTEM_POWER = 40        # str: "on" / "off"
-DP_RAIN_DELAY_ACTIVE = 43   # bool
+DP_SYSTEM_POWER = 40        # str: "on" / "off" — main valve control
+DP_SKIP_SCHEDULE = 43       # bool — skip/pause scheduled irrigation
 DP_MODE = 101               # str: "auto" / "manual"
-DP_SCHEDULE_ENABLED = 102   # bool
-DP_RAIN_DELAY_DURATION = 103  # int: minutes
+DP_POWER_SWITCH = 102       # bool — power on/off
+DP_AUTO_REMAINING = 103     # int: minutes remaining in auto irrigation
+DP_RAIN_SENSOR_ENABLED = 107  # bool — rain sensor main switch
+DP_SEASONAL_ADJUST = 109    # int: seasonal adjustment percentage
+DP_ACTIVE_ZONE = 110        # int: bitmask of currently active zone
+DP_QUEUED_ZONE = 111        # int: bitmask of queued zone
 
 # Config entry keys
 CONF_DEVICE_ID = "device_id"

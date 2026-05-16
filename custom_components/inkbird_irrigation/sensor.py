@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -40,9 +39,9 @@ async def async_setup_entry(
 class InkbirdZoneCountdownSensor(InkbirdEntity, SensorEntity):
     """Sensor showing remaining time for a zone."""
 
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_unit_of_measurement = "min"
     _attr_icon = "mdi:timer-outline"
+    _attr_suggested_display_precision = 0
 
     def __init__(self, coordinator: InkbirdCoordinator, zone: int) -> None:
         super().__init__(coordinator)
@@ -59,9 +58,9 @@ class InkbirdZoneCountdownSensor(InkbirdEntity, SensorEntity):
 class InkbirdZoneElapsedSensor(InkbirdEntity, SensorEntity):
     """Sensor showing elapsed time for a zone."""
 
-    _attr_device_class = SensorDeviceClass.DURATION
-    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
+    _attr_native_unit_of_measurement = "min"
     _attr_icon = "mdi:timer-check-outline"
+    _attr_suggested_display_precision = 0
 
     def __init__(self, coordinator: InkbirdCoordinator, zone: int) -> None:
         super().__init__(coordinator)

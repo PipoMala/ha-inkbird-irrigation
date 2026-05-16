@@ -134,6 +134,70 @@ automation:
 - **Communication**: Direct LAN (UDP/TCP on device IP)
 - **Polling interval**: 15 seconds
 - **No cloud dependency**: Works entirely on your local network
+- **Zones**: Sequential only — one zone runs at a time (hardware limitation)
+- **Duration**: 1-180 minutes per zone, configurable via number entity
+
+## Development
+
+### Local Testing (without HACS)
+
+For development, you can copy the integration directly to your HA instance via Samba share:
+
+```powershell
+# Windows — copy to HA after code changes
+xcopy /E /Y "custom_components\inkbird_irrigation\*" "\\YOUR_HA_IP\config\custom_components\inkbird_irrigation\"
+```
+
+Then reload the integration in HA (Settings → Devices & Services → Inkbird → ⋮ → Reload).
+
+### Setup
+
+```bash
+git clone https://github.com/ac-uy/ha-inkbird-irrigation.git
+cd ha-inkbird-irrigation
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+pip install tinytuya
+```
+
+### Device Scanning
+
+```bash
+# Find Tuya devices on your network
+python -m tinytuya scan
+
+# Probe device data points
+python local/probe_device.py
+```
+
+### Data Point Reference
+
+| DP | Function | Type | Direction |
+|----|----------|------|-----------|
+| 1-6 | Zone 1-6 switch | bool | Read/Write |
+| 13-18 | Zone 1-6 countdown | int (minutes) | Read (Write to start with duration) |
+| 25-30 | Zone 1-6 elapsed time | int (minutes) | Read-only |
+| 40 | Main valve control | str (`"on"`/`"off"`) | Read/Write |
+| 43 | Skip schedule | bool | Read/Write |
+| 101 | Mode | str (`"auto"`/`"manual"`) | Read |
+| 102 | Power switch | bool | Read/Write |
+| 103 | Auto-irrigation remaining time | int (minutes) | Read |
+| 107 | Rain sensor enabled | bool | Read/Write |
+| 109 | Seasonal adjustment | int (%) | Read/Write |
+| 110 | Active zone bitmask | int | Read (Write to start zone with duration) |
+| 111 | Queued zone bitmask | int | Read |
+
+### Starting a Zone with Custom Duration
+
+To start a zone with a specific duration, send the countdown DP and zone bitmask together:
+
+```python
+# Start Zone 3 for 15 minutes
+payload = device.generate_payload(tinytuya.CONTROL, {"15": 15, "110": 4})
+device.send(payload)
+```
+
+Zone bitmask values: Zone 1=1, Zone 2=2, Zone 3=4, Zone 4=8, Zone 5=16, Zone 6=32
 
 ## Troubleshooting
 

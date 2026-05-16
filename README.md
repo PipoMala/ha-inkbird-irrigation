@@ -9,11 +9,13 @@ A custom Home Assistant integration for the **Inkbird IIC-600-WIFI** smart irrig
 ## Features
 
 - 💧 **6 zone control** — turn valves on/off individually
-- ⏱️ **Duration settings** — set watering time per zone (1-240 minutes)
+- ⏱️ **Duration settings** — set watering time per zone (1-180 minutes)
 - 📊 **Countdown timers** — see remaining time for each active zone
+- ⏱️ **Elapsed time** — see how long each zone has been running
 - 🏠 **100% Local** — communicates directly with the device on your LAN (no cloud)
 - 🔒 **No internet required** — works even if your internet is down
 - 🌧️ **Rain delay status** — see if rain delay is active
+- 🔄 **Sequential zones** — queue multiple zones, they run one at a time (hardware limitation)
 
 ## Supported Devices
 
@@ -80,22 +82,32 @@ Before installing this integration, you need your device's **Local Key** from th
 
 | Entity | Type | Description |
 |--------|------|-------------|
-| `switch.inkbird_zone_1` - `zone_6` | Switch | Zone valve on/off |
-| `sensor.inkbird_zone_1_time_remaining` - `zone_6` | Sensor | Countdown (seconds) |
-| `number.inkbird_zone_1_duration` - `zone_6` | Number | Duration setting (minutes) |
-| `sensor.inkbird_mode` | Sensor | Operating mode (auto/manual) |
+| `switch.inkbird_iic_600_zone_1` - `zone_6` | Switch | Zone valve on/off |
+| `number.inkbird_iic_600_zone_1_duration` - `zone_6` | Number | Duration setting (1-180 minutes) |
+| `sensor.inkbird_iic_600_zone_1_time_remaining` - `zone_6` | Sensor | Countdown (minutes remaining) |
+| `sensor.inkbird_iic_600_zone_1_time_elapsed` - `zone_6` | Sensor | Elapsed time (minutes running) |
+| `sensor.inkbird_iic_600_mode` | Sensor | Operating mode (auto/manual) |
+
+> **Note**: Only one zone can run at a time. If you turn on multiple zones, they will run sequentially in zone order.
 
 ## Usage
 
 ### Turn on a zone for 15 minutes
 
+Set the duration, then turn on the switch. The zone will run for the configured time and auto-stop.
+
 ```yaml
-service: switch.turn_on
-target:
-  entity_id: switch.inkbird_iic_600_zone_1
+- service: number.set_value
+  target:
+    entity_id: number.inkbird_iic_600_zone_1_duration
+  data:
+    value: 15
+- service: switch.turn_on
+  target:
+    entity_id: switch.inkbird_iic_600_zone_1
 ```
 
-Set the duration first via the number entity, then turn on the switch.
+> **Tip**: The duration is remembered — if you've already set it, just turn on the switch next time.
 
 ### Automation: Water front garden every morning
 

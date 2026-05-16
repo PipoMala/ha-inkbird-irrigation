@@ -1,0 +1,32 @@
+"""Constants for the Inkbird Irrigation integration."""
+
+DOMAIN = "inkbird_irrigation"
+
+# Tuya protocol
+TUYA_VERSION = 3.4
+
+# Number of zones on the IIC-600
+NUM_ZONES = 6
+
+# Data Point mapping for IIC-600-WIFI
+# Zone switches (bool): True = valve open
+DP_ZONE_SWITCH = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
+
+# Zone countdown timers (int): seconds remaining
+DP_ZONE_COUNTDOWN = {1: 13, 2: 14, 3: 15, 4: 16, 5: 17, 6: 18}
+
+# Zone duration settings (int): minutes to run
+DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}
+
+# System DPs
+DP_SYSTEM_POWER = 40        # str: "on" / "off"
+DP_RAIN_DELAY_ACTIVE = 43   # bool
+DP_MODE = 101               # str: "auto" / "manual"
+DP_SCHEDULE_ENABLED = 102   # bool
+DP_RAIN_DELAY_DURATION = 103  # int: minutes
+
+# Config entry keys
+CONF_DEVICE_ID = "device_id"
+CONF_LOCAL_KEY = "local_key"
+CONF_DEVICE_IP = "device_ip"
+CONF_DEVICE_NAME = "device_name"

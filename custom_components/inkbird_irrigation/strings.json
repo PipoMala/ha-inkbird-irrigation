@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Inkbird Irrigation Setup",
+        "description": "Enter your Inkbird IIC-600 device credentials. You can get these from the Tuya IoT Platform (iot.tuya.com).",
+        "data": {
+          "device_name": "Device name",
+          "device_id": "Device ID",
+          "local_key": "Local Key",
+          "device_ip": "Device IP address"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot connect to device. Check IP, Device ID, and Local Key."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  }
+}

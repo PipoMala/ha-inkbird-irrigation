@@ -1,0 +1,68 @@
+"""Sensor platform for Inkbird Irrigation — zone countdowns and system status."""
+
+from __future__ import annotations
+
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import UnitOfTime
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import DOMAIN, NUM_ZONES
+from .coordinator import InkbirdCoordinator
+from .entity import InkbirdEntity
+
+
+async def async_setup_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
+) -> None:
+    """Set up Inkbird sensors."""
+    coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
+
+    entities: list[SensorEntity] = []
+
+    # Zone countdown sensors
+    for zone in range(1, NUM_ZONES + 1):
+        entities.append(InkbirdZoneCountdownSensor(coordinator, zone))
+
+    # System sensors
+    entities.append(InkbirdModeSensor(coordinator))
+
+    async_add_entities(entities)
+
+
+class InkbirdZoneCountdownSensor(InkbirdEntity, SensorEntity):
+    """Sensor showing remaining time for a zone."""
+
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_icon = "mdi:timer-outline"
+
+    def __init__(self, coordinator: InkbirdCoordinator, zone: int) -> None:
+        super().__init__(coordinator)
+        self._zone = zone
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_zone_{zone}_countdown"
+        self._attr_name = f"Zone {zone} time remaining"
+
+    @property
+    def native_value(self) -> int:
+        """Return the countdown in seconds."""
+        return self.coordinator.api.device.zone_countdown.get(self._zone, 0)
+
+
+class InkbirdModeSensor(InkbirdEntity, SensorEntity):
+    """Sensor showing the current operating mode."""
+
+    _attr_icon = "mdi:water-pump"
+
+    def __init__(self, coordinator: InkbirdCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_mode"
+        self._attr_name = "Mode"
+
+    @property
+    def native_value(self) -> str:
+        """Return the current mode."""
+        return self.coordinator.api.device.mode

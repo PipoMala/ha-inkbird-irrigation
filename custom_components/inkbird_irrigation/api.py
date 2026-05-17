@@ -130,16 +130,17 @@ class InkbirdAPI:
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Turn on a zone for the specified duration (1-180 minutes)."""
-        if not self._tuya or zone < 1 or zone > NUM_ZONES:
+        if zone < 1 or zone > NUM_ZONES:
             return False
         try:
+            d = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
+            d.set_version(TUYA_VERSION)
             dp_countdown = DP_ZONE_COUNTDOWN[zone]
-            zone_bitmask = 1 << (zone - 1)  # zone 1=1, zone 2=2, zone 3=4, etc.
-            # Send countdown + zone bitmask together to start with custom duration
-            payload = self._tuya.generate_payload(
+            zone_bitmask = 1 << (zone - 1)
+            payload = d.generate_payload(
                 tinytuya.CONTROL, {str(dp_countdown): duration_minutes, "110": zone_bitmask}
             )
-            self._tuya.send(payload)
+            d.send(payload)
             _LOGGER.debug("Zone %d turned ON for %d minutes", zone, duration_minutes)
             return True
         except Exception as exc:  # noqa: BLE001
@@ -148,11 +149,12 @@ class InkbirdAPI:
 
     def turn_off_zone(self, zone: int) -> bool:
         """Turn off a zone."""
-        if not self._tuya or zone < 1 or zone > NUM_ZONES:
+        if zone < 1 or zone > NUM_ZONES:
             return False
         try:
-            dp_switch = DP_ZONE_SWITCH[zone]
-            self._tuya.set_value(dp_switch, False)
+            d = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
+            d.set_version(TUYA_VERSION)
+            d.set_value(DP_ZONE_SWITCH[zone], False)
             _LOGGER.debug("Zone %d turned OFF", zone)
             return True
         except Exception as exc:  # noqa: BLE001
@@ -173,10 +175,11 @@ class InkbirdAPI:
 
     def set_dp(self, dp: int, value: Any) -> bool:
         """Set a single data point value."""
-        if not self._tuya:
-            return False
         try:
-            self._tuya.set_value(dp, value)
+            # Create fresh connection for commands (avoids stale socket)
+            d = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
+            d.set_version(TUYA_VERSION)
+            d.set_value(dp, value)
             _LOGGER.debug("Set DP %d = %r", dp, value)
             return True
         except Exception as exc:  # noqa: BLE001

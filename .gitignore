@@ -8,3 +8,7 @@ __pycache__/
 
 # Local testing and development files
 local/
+
+# tinytuya credentials and snapshots
+tinytuya.json
+snapshot.json

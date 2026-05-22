@@ -11,7 +11,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.const import Platform
 
 from .api import InkbirdAPI
-from .const import CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
+from .const import CONF_CLOUD_API_KEY, CONF_CLOUD_API_REGION, CONF_CLOUD_API_SECRET, CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
 from .coordinator import InkbirdCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -29,6 +29,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_DEVICE_ID],
         entry.data[CONF_LOCAL_KEY],
         entry.data[CONF_DEVICE_IP],
+        cloud_api_key=entry.data.get(CONF_CLOUD_API_KEY, ""),
+        cloud_api_secret=entry.data.get(CONF_CLOUD_API_SECRET, ""),
+        cloud_api_region=entry.data.get(CONF_CLOUD_API_REGION, "eu"),
     )
 
     connected = await hass.async_add_executor_job(api.connect)

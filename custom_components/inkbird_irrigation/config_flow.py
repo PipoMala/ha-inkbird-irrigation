@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigFlow
 from homeassistant.data_entry_flow import FlowResult
 
 from .api import InkbirdAPI
-from .const import CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
+from .const import CONF_CLOUD_API_KEY, CONF_CLOUD_API_REGION, CONF_CLOUD_API_SECRET, CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,6 +21,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_DEVICE_ID): str,
         vol.Required(CONF_LOCAL_KEY): str,
         vol.Required(CONF_DEVICE_IP): str,
+        vol.Optional(CONF_CLOUD_API_KEY): str,
+        vol.Optional(CONF_CLOUD_API_SECRET): str,
+        vol.Optional(CONF_CLOUD_API_REGION, default="eu"): str,
     }
 )
 

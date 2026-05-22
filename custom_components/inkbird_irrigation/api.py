@@ -85,18 +85,90 @@ class InkbirdAPI:
     """Local Tuya API client for the Inkbird IIC-600.
     
     Uses a persistent socket connection to reduce session churn.
-    The device's local protocol handler appears to degrade with
-    too many new connections (error 914 after ~12-24h of 10s polling).
+    Optionally falls back to Tuya Cloud API when local is unavailable.
     """
 
-    def __init__(self, device_id: str, local_key: str, device_ip: str) -> None:
+    def __init__(self, device_id: str, local_key: str, device_ip: str,
+                 cloud_api_key: str = "", cloud_api_secret: str = "", cloud_api_region: str = "eu") -> None:
         self._device_id = device_id
         self._local_key = local_key
         self._device_ip = device_ip
+        self._cloud_api_key = cloud_api_key
+        self._cloud_api_secret = cloud_api_secret
+        self._cloud_api_region = cloud_api_region
         self._tuya: tinytuya.Device | None = None
+        self._cloud: tinytuya.Cloud | None = None
         self._connected = False
         self._fail_count = 0
+        self._using_cloud = False
         self.device = InkbirdDevice()
+
+    @property
+    def _has_cloud(self) -> bool:
+        return bool(self._cloud_api_key and self._cloud_api_secret)
+
+    def _get_cloud(self) -> tinytuya.Cloud | None:
+        """Get or create cloud client."""
+        if not self._has_cloud:
+            return None
+        if not self._cloud:
+            self._cloud = tinytuya.Cloud(
+                apiRegion=self._cloud_api_region,
+                apiKey=self._cloud_api_key,
+                apiSecret=self._cloud_api_secret,
+            )
+        return self._cloud
+
+    def _cloud_update(self) -> bool:
+        """Poll device via cloud API (fallback)."""
+        cloud = self._get_cloud()
+        if not cloud:
+            return False
+        try:
+            status = cloud.getstatus(self._device_id)
+            if not status or not status.get("success") or not status.get("result"):
+                return False
+            # Map cloud status codes to DPs
+            code_to_dp = {
+                "switch_1": "1", "switch_2": "2", "switch_3": "3",
+                "switch_4": "4", "switch_5": "5", "switch_6": "6",
+                "countdown_1": "13", "countdown_2": "14", "countdown_3": "15",
+                "countdown_4": "16", "countdown_5": "17", "countdown_6": "18",
+                "use_time_1": "25", "use_time_2": "26", "use_time_3": "27",
+                "use_time_4": "28", "use_time_5": "29", "use_time_6": "30",
+                "water_control": "40", "control_skip": "43",
+            }
+            dps: dict[str, Any] = {}
+            for item in status["result"]:
+                code = item.get("code", "")
+                dp = code_to_dp.get(code)
+                if dp:
+                    value = item["value"]
+                    # Convert cloud enum to local format
+                    if code == "water_control":
+                        value = str(value)
+                    dps[dp] = value
+            if dps:
+                self.device.online = True
+                self.device.update_from_dps(dps)
+                return True
+            return False
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Cloud update failed: %s", exc)
+            return False
+
+    def _cloud_command(self, code: str, value: Any) -> bool:
+        """Send command via cloud API."""
+        cloud = self._get_cloud()
+        if not cloud:
+            return False
+        try:
+            commands = {"commands": [{"code": code, "value": value}]}
+            result = cloud.sendcommand(self._device_id, commands)
+            return result.get("success", False)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Cloud command failed: %s", exc)
+            return False
 
     def _ensure_connection(self) -> tinytuya.Device | None:
         """Get or create a persistent connection."""
@@ -147,68 +219,90 @@ class InkbirdAPI:
             return False
 
     def update(self) -> bool:
-        """Poll the device for current state using persistent connection."""
+        """Poll the device for current state. Falls back to cloud if local fails."""
+        # Try local first
         try:
             d = self._ensure_connection()
-            if not d:
-                self.device.online = False
-                return False
-            status = d.status()
-            if status and "dps" in status:
-                self.device.online = True
-                self.device.update_from_dps(status["dps"])
-                self._fail_count = 0
-                return True
-            # No DPs but no exception - might be a transient issue
-            self._fail_count += 1
-            if self._fail_count >= 3:
-                _LOGGER.debug("3 consecutive failures, resetting connection")
-                self._reset_connection()
-            self.device.online = False
-            return False
+            if d:
+                status = d.status()
+                if status and "dps" in status:
+                    self.device.online = True
+                    self.device.update_from_dps(status["dps"])
+                    self._fail_count = 0
+                    if self._using_cloud:
+                        _LOGGER.info("Local connection recovered, switching back from cloud")
+                        self._using_cloud = False
+                    return True
+                self._fail_count += 1
+            else:
+                self._fail_count += 1
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Update failed: %s", exc)
+            _LOGGER.debug("Local update failed: %s", exc)
             self._fail_count += 1
-            if self._fail_count >= 2:
-                self._reset_connection()
-            self.device.online = False
-            return False
+
+        # Reset local connection after failures
+        if self._fail_count >= 3:
+            self._reset_connection()
+
+        # Fall back to cloud if available
+        if self._has_cloud and self._fail_count >= 2:
+            if not self._using_cloud:
+                _LOGGER.warning("Local connection failed %d times, falling back to cloud API", self._fail_count)
+                self._using_cloud = True
+            if self._cloud_update():
+                return True
+
+        self.device.online = False
+        return False
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Turn on a zone for the specified duration (1-180 minutes)."""
         if zone < 1 or zone > NUM_ZONES:
             return False
+        # Try local
         try:
             d = self._ensure_connection()
-            if not d:
-                return False
-            dp_countdown = DP_ZONE_COUNTDOWN[zone]
-            zone_bitmask = 1 << (zone - 1)
-            payload = d.generate_payload(
-                tinytuya.CONTROL, {str(dp_countdown): duration_minutes, "110": zone_bitmask}
-            )
-            d.send(payload)
-            _LOGGER.debug("Zone %d turned ON for %d minutes", zone, duration_minutes)
-            return True
+            if d:
+                dp_countdown = DP_ZONE_COUNTDOWN[zone]
+                zone_bitmask = 1 << (zone - 1)
+                payload = d.generate_payload(
+                    tinytuya.CONTROL, {str(dp_countdown): duration_minutes, "110": zone_bitmask}
+                )
+                d.send(payload)
+                _LOGGER.debug("Zone %d turned ON for %d minutes (local)", zone, duration_minutes)
+                return True
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.error("Failed to turn on zone %d: %s", zone, exc)
-            return False
+            _LOGGER.debug("Local turn_on_zone failed: %s", exc)
+            self._reset_connection()
+        # Fall back to cloud
+        if self._has_cloud:
+            code = f"countdown_{zone}"
+            if self._cloud_command(code, duration_minutes):
+                _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
+                return True
+        return False
 
     def turn_off_zone(self, zone: int) -> bool:
         """Turn off a zone."""
         if zone < 1 or zone > NUM_ZONES:
             return False
+        # Try local
         try:
             d = self._ensure_connection()
-            if not d:
-                return False
-            d.set_value(DP_ZONE_SWITCH[zone], False)
-            _LOGGER.debug("Zone %d turned OFF", zone)
-            return True
+            if d:
+                d.set_value(DP_ZONE_SWITCH[zone], False)
+                _LOGGER.debug("Zone %d turned OFF (local)", zone)
+                return True
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.error("Failed to turn off zone %d: %s", zone, exc)
+            _LOGGER.debug("Local turn_off_zone failed: %s", exc)
             self._reset_connection()
-            return False
+        # Fall back to cloud
+        if self._has_cloud:
+            code = f"switch_{zone}"
+            if self._cloud_command(code, False):
+                _LOGGER.debug("Zone %d turned OFF (cloud)", zone)
+                return True
+        return False
 
     def set_zone_duration(self, zone: int, duration_minutes: int) -> bool:
         """Set the default duration for a zone."""

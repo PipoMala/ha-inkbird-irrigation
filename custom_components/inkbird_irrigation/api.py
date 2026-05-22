@@ -82,49 +82,95 @@ class InkbirdDevice:
 
 
 class InkbirdAPI:
-    """Local Tuya API client for the Inkbird IIC-600."""
+    """Local Tuya API client for the Inkbird IIC-600.
+    
+    Uses a persistent socket connection to reduce session churn.
+    The device's local protocol handler appears to degrade with
+    too many new connections (error 914 after ~12-24h of 10s polling).
+    """
 
     def __init__(self, device_id: str, local_key: str, device_ip: str) -> None:
         self._device_id = device_id
         self._local_key = local_key
         self._device_ip = device_ip
         self._tuya: tinytuya.Device | None = None
+        self._connected = False
+        self._fail_count = 0
         self.device = InkbirdDevice()
+
+    def _ensure_connection(self) -> tinytuya.Device | None:
+        """Get or create a persistent connection."""
+        if self._tuya and self._connected:
+            return self._tuya
+        try:
+            self._tuya = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
+            self._tuya.set_version(TUYA_VERSION)
+            self._tuya.set_socketPersistent(True)
+            self._tuya.set_socketTimeout(5)
+            self._connected = True
+            self._fail_count = 0
+            _LOGGER.debug("Persistent connection established to %s", self._device_ip)
+            return self._tuya
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Connection setup failed: %s", exc)
+            self._connected = False
+            return None
+
+    def _reset_connection(self) -> None:
+        """Close and reset the connection."""
+        if self._tuya:
+            try:
+                self._tuya.close()
+            except Exception:  # noqa: BLE001
+                pass
+        self._tuya = None
+        self._connected = False
 
     def connect(self) -> bool:
         """Initialize the Tuya device connection."""
         try:
-            self._tuya = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
-            self._tuya.set_version(TUYA_VERSION)
-            status = self._tuya.status()
+            d = self._ensure_connection()
+            if not d:
+                return False
+            status = d.status()
             if status and "dps" in status:
                 self.device.online = True
                 self.device.update_from_dps(status["dps"])
                 _LOGGER.debug("Connected to Inkbird IIC-600 at %s", self._device_ip)
                 return True
             _LOGGER.error("No DPs returned from device at %s", self._device_ip)
+            self._reset_connection()
             return False
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Connection failed: %s", exc)
+            self._reset_connection()
             return False
 
     def update(self) -> bool:
-        """Poll the device for current state."""
-        if not self._tuya:
-            return False
+        """Poll the device for current state using persistent connection."""
         try:
-            # Reconnect each poll to avoid stale socket
-            self._tuya = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
-            self._tuya.set_version(TUYA_VERSION)
-            status = self._tuya.status()
+            d = self._ensure_connection()
+            if not d:
+                self.device.online = False
+                return False
+            status = d.status()
             if status and "dps" in status:
                 self.device.online = True
                 self.device.update_from_dps(status["dps"])
+                self._fail_count = 0
                 return True
+            # No DPs but no exception - might be a transient issue
+            self._fail_count += 1
+            if self._fail_count >= 3:
+                _LOGGER.debug("3 consecutive failures, resetting connection")
+                self._reset_connection()
             self.device.online = False
             return False
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Update failed: %s", exc)
+            self._fail_count += 1
+            if self._fail_count >= 2:
+                self._reset_connection()
             self.device.online = False
             return False
 
@@ -133,8 +179,9 @@ class InkbirdAPI:
         if zone < 1 or zone > NUM_ZONES:
             return False
         try:
-            d = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
-            d.set_version(TUYA_VERSION)
+            d = self._ensure_connection()
+            if not d:
+                return False
             dp_countdown = DP_ZONE_COUNTDOWN[zone]
             zone_bitmask = 1 << (zone - 1)
             payload = d.generate_payload(
@@ -152,36 +199,43 @@ class InkbirdAPI:
         if zone < 1 or zone > NUM_ZONES:
             return False
         try:
-            d = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
-            d.set_version(TUYA_VERSION)
+            d = self._ensure_connection()
+            if not d:
+                return False
             d.set_value(DP_ZONE_SWITCH[zone], False)
             _LOGGER.debug("Zone %d turned OFF", zone)
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to turn off zone %d: %s", zone, exc)
+            self._reset_connection()
             return False
 
     def set_zone_duration(self, zone: int, duration_minutes: int) -> bool:
         """Set the default duration for a zone."""
-        if not self._tuya or zone < 1 or zone > NUM_ZONES:
+        if zone < 1 or zone > NUM_ZONES:
             return False
         try:
+            d = self._ensure_connection()
+            if not d:
+                return False
             dp_duration = DP_ZONE_DURATION[zone]
-            self._tuya.set_value(dp_duration, duration_minutes)
+            d.set_value(dp_duration, duration_minutes)
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to set duration for zone %d: %s", zone, exc)
+            self._reset_connection()
             return False
 
     def set_dp(self, dp: int, value: Any) -> bool:
         """Set a single data point value."""
         try:
-            # Create fresh connection for commands (avoids stale socket)
-            d = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
-            d.set_version(TUYA_VERSION)
+            d = self._ensure_connection()
+            if not d:
+                return False
             d.set_value(dp, value)
             _LOGGER.debug("Set DP %d = %r", dp, value)
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to set DP %d: %s", dp, exc)
+            self._reset_connection()
             return False

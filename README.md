@@ -4,9 +4,7 @@
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
 
-A custom Home Assistant integration for the **Inkbird IIC-600-WIFI** smart irrigation controller. Full local control — no cloud dependency.
-[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/ac-uy/ha-inkbird-irrigation/blob/master/LICENSE)
-[![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz/)
+A custom Home Assistant integration for the **Inkbird IIC-600-WIFI** smart irrigation controller. Full local control with automatic cloud fallback.
 
 ## Features
 
@@ -14,10 +12,12 @@ A custom Home Assistant integration for the **Inkbird IIC-600-WIFI** smart irrig
 - ⏱️ **Duration settings** — set watering time per zone (1-180 minutes)
 - 📊 **Countdown timers** — see remaining time for each active zone
 - ⏱️ **Elapsed time** — see how long each zone has been running
-- 🏠 **100% Local** — communicates directly with the device on your LAN (no cloud)
-- 🔒 **No internet required** — works even if your internet is down
-- 🌧️ **Rain delay status** — see if rain delay is active
-- 🔄 **Sequential zones** — queue multiple zones, they run one at a time (hardware limitation)
+- 🏠 **Local first** — communicates directly with the device on your LAN
+- ☁️ **Cloud fallback** — optional Tuya Cloud API fallback when local is unavailable
+- 🔄 **Auto-recovery** — switches back to local when connection restores
+- 🌧️ **Rain sensor status** — see if rain sensor is enabled
+- 🔄 **Sequential zones** — queue multiple zones, they run one at a time (hardware behavior)
+- 📡 **Connection mode sensor** — shows whether running on local or cloud
 
 ## Supported Devices
 
@@ -85,12 +85,35 @@ Before installing this integration, you need your device's **Local Key** from th
 | Entity | Type | Description |
 |--------|------|-------------|
 | `switch.inkbird_iic_600_zone_1` - `zone_6` | Switch | Zone valve on/off |
+| `switch.inkbird_iic_600_main_valve` | Switch | Main valve control |
+| `switch.inkbird_iic_600_rain_sensor` | Switch | Rain sensor enable/disable |
+| `switch.inkbird_iic_600_power` | Switch | System power |
 | `number.inkbird_iic_600_zone_1_duration` - `zone_6` | Number | Duration setting (1-180 minutes) |
 | `sensor.inkbird_iic_600_zone_1_time_remaining` - `zone_6` | Sensor | Countdown (minutes remaining) |
 | `sensor.inkbird_iic_600_zone_1_time_elapsed` - `zone_6` | Sensor | Elapsed time (minutes running) |
 | `sensor.inkbird_iic_600_mode` | Sensor | Operating mode (auto/manual) |
+| `sensor.inkbird_iic_600_connection_mode` | Sensor | Connection mode (local/cloud) |
 
-> **Note**: Only one zone can run at a time. If you turn on multiple zones, they will run sequentially in zone order.
+## Cloud Fallback (Optional)
+
+The device's local Tuya protocol can occasionally become unresponsive (error 914). To prevent the integration from going unavailable, you can provide optional Tuya Cloud API credentials during setup.
+
+**How it works:**
+1. Integration uses local connection (fastest, ~50ms)
+2. If local fails 2 consecutive times → automatically switches to cloud API (~300ms)
+3. Periodically retries local in the background
+4. When local recovers → switches back automatically
+
+**To enable cloud fallback**, provide these optional fields during setup:
+- **Cloud API Key** — from your Tuya IoT Platform project
+- **Cloud API Secret** — from your Tuya IoT Platform project  
+- **Cloud API Region** — `eu`, `us`, `cn`, etc.
+
+Without cloud credentials, the integration works local-only (original behavior).
+
+## Companion Card
+
+For a dedicated Lovelace card with zone controls, progress bars, schedules, and connection status, install the **[Inkbird Irrigation Card](https://github.com/ac-uy/ha-inkbird-irrigation-card)**.
 
 ## Usage
 

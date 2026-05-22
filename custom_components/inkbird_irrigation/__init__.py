@@ -36,7 +36,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     connected = await hass.async_add_executor_job(api.connect)
     if not connected:
-        raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600")
+        # If cloud is available, allow setup anyway (cloud fallback will work)
+        if api._has_cloud:
+            cloud_ok = await hass.async_add_executor_job(api._cloud_update)
+            if not cloud_ok:
+                raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600 (local and cloud both failed)")
+            _LOGGER.warning("Local connection failed, starting with cloud fallback")
+        else:
+            raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600")
 
     coordinator = InkbirdCoordinator(hass, api, entry)
     await coordinator.async_config_entry_first_refresh()

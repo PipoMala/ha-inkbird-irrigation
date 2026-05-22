@@ -40,13 +40,23 @@ class InkbirdIrrigationConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Test connection
+            # Test connection - try local first, then cloud
             api = InkbirdAPI(
                 user_input[CONF_DEVICE_ID],
                 user_input[CONF_LOCAL_KEY],
                 user_input[CONF_DEVICE_IP],
+                cloud_api_key=user_input.get(CONF_CLOUD_API_KEY, ""),
+                cloud_api_secret=user_input.get(CONF_CLOUD_API_SECRET, ""),
+                cloud_api_region=user_input.get(CONF_CLOUD_API_REGION, "eu"),
             )
             connected = await self.hass.async_add_executor_job(api.connect)
+
+            if not connected and api._has_cloud:
+                # Local failed but we have cloud - try cloud to validate credentials
+                cloud_ok = await self.hass.async_add_executor_job(api._cloud_update)
+                if cloud_ok:
+                    connected = True
+                    _LOGGER.warning("Local connection failed, but cloud API works. Setting up with cloud fallback.")
 
             if connected:
                 # Check for duplicate

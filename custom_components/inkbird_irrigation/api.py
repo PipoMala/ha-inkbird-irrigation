@@ -220,36 +220,52 @@ class InkbirdAPI:
 
     def update(self) -> bool:
         """Poll the device for current state. Falls back to cloud if local fails."""
-        # Try local first
-        try:
-            d = self._ensure_connection()
-            if d:
-                status = d.status()
-                if status and "dps" in status:
-                    self.device.online = True
-                    self.device.update_from_dps(status["dps"])
-                    self._fail_count = 0
-                    if self._using_cloud:
-                        _LOGGER.info("Local connection recovered, switching back from cloud")
-                        self._using_cloud = False
-                    return True
+        # If already using cloud (local was down at setup), skip local attempt
+        if not self._using_cloud:
+            # Try local first
+            try:
+                d = self._ensure_connection()
+                if d:
+                    status = d.status()
+                    if status and "dps" in status:
+                        self.device.online = True
+                        self.device.update_from_dps(status["dps"])
+                        self._fail_count = 0
+                        return True
+                    self._fail_count += 1
+                else:
+                    self._fail_count += 1
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("Local update failed: %s", exc)
                 self._fail_count += 1
-            else:
-                self._fail_count += 1
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Local update failed: %s", exc)
-            self._fail_count += 1
 
-        # Reset local connection after failures
-        if self._fail_count >= 3:
-            self._reset_connection()
+            # Reset local connection after failures
+            if self._fail_count >= 3:
+                self._reset_connection()
 
-        # Fall back to cloud if available
-        if self._has_cloud and self._fail_count >= 2:
-            if not self._using_cloud:
+            # Switch to cloud after 2 failures
+            if self._has_cloud and self._fail_count >= 2:
                 _LOGGER.warning("Local connection failed %d times, falling back to cloud API", self._fail_count)
                 self._using_cloud = True
+
+        # Use cloud (either as fallback or primary when local is down)
+        if self._using_cloud and self._has_cloud:
             if self._cloud_update():
+                # Periodically try to restore local (every 20 polls = ~5 min)
+                if self._fail_count % 20 == 0:
+                    self._reset_connection()
+                    try:
+                        d = self._ensure_connection()
+                        if d:
+                            status = d.status()
+                            if status and "dps" in status:
+                                _LOGGER.info("Local connection recovered, switching back from cloud")
+                                self._using_cloud = False
+                                self._fail_count = 0
+                                self.device.update_from_dps(status["dps"])
+                    except Exception:  # noqa: BLE001
+                        pass
+                self._fail_count += 1
                 return True
 
         self.device.online = False

@@ -42,6 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if not cloud_ok:
                 raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600 (local and cloud both failed)")
             _LOGGER.warning("Local connection failed, starting with cloud fallback")
+            api._using_cloud = True
         else:
             raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600")
 

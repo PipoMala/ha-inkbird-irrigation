@@ -304,10 +304,11 @@ class InkbirdAPI:
         if not cloud:
             return False
         try:
-            # Send countdown and switch together in one command batch
+            # Order matters: switch ON first, then set countdown
+            # Device only accepts countdown changes when zone is already running
             commands = {"commands": [
-                {"code": f"countdown_{zone}", "value": duration_minutes},
                 {"code": f"switch_{zone}", "value": True},
+                {"code": f"countdown_{zone}", "value": duration_minutes},
             ]}
             result = cloud.sendcommand(self._device_id, commands)
             if result.get("success", False):

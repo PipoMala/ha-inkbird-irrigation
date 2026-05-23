@@ -293,7 +293,10 @@ class InkbirdAPI:
         # Fall back to cloud
         if self._has_cloud:
             code = f"countdown_{zone}"
-            if self._cloud_command(code, duration_minutes):
+            switch_code = f"switch_{zone}"
+            # Set countdown first, then turn on the switch
+            self._cloud_command(code, duration_minutes)
+            if self._cloud_command(switch_code, True):
                 _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
                 return True
         return False

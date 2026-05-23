@@ -300,13 +300,23 @@ class InkbirdAPI:
 
     def _cloud_turn_on(self, zone: int, duration_minutes: int) -> bool:
         """Start a zone via cloud API."""
-        code = f"countdown_{zone}"
-        switch_code = f"switch_{zone}"
-        self._cloud_command(code, duration_minutes)
-        if self._cloud_command(switch_code, True):
-            _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
-            return True
-        return False
+        cloud = self._get_cloud()
+        if not cloud:
+            return False
+        try:
+            # Send countdown and switch together in one command batch
+            commands = {"commands": [
+                {"code": f"countdown_{zone}", "value": duration_minutes},
+                {"code": f"switch_{zone}", "value": True},
+            ]}
+            result = cloud.sendcommand(self._device_id, commands)
+            if result.get("success", False):
+                _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
+                return True
+            return False
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Cloud turn_on failed: %s", exc)
+            return False
 
     def turn_off_zone(self, zone: int) -> bool:
         """Turn off a zone."""

@@ -275,6 +275,9 @@ class InkbirdAPI:
         """Turn on a zone for the specified duration (1-180 minutes)."""
         if zone < 1 or zone > NUM_ZONES:
             return False
+        # If already in cloud mode, go straight to cloud
+        if self._using_cloud and self._has_cloud:
+            return self._cloud_turn_on(zone, duration_minutes)
         # Try local
         try:
             d = self._ensure_connection()
@@ -292,18 +295,29 @@ class InkbirdAPI:
             self._reset_connection()
         # Fall back to cloud
         if self._has_cloud:
-            code = f"countdown_{zone}"
-            switch_code = f"switch_{zone}"
-            # Set countdown first, then turn on the switch
-            self._cloud_command(code, duration_minutes)
-            if self._cloud_command(switch_code, True):
-                _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
-                return True
+            return self._cloud_turn_on(zone, duration_minutes)
+        return False
+
+    def _cloud_turn_on(self, zone: int, duration_minutes: int) -> bool:
+        """Start a zone via cloud API."""
+        code = f"countdown_{zone}"
+        switch_code = f"switch_{zone}"
+        self._cloud_command(code, duration_minutes)
+        if self._cloud_command(switch_code, True):
+            _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
+            return True
         return False
 
     def turn_off_zone(self, zone: int) -> bool:
         """Turn off a zone."""
         if zone < 1 or zone > NUM_ZONES:
+            return False
+        # If already in cloud mode, go straight to cloud
+        if self._using_cloud and self._has_cloud:
+            code = f"switch_{zone}"
+            if self._cloud_command(code, False):
+                _LOGGER.debug("Zone %d turned OFF (cloud)", zone)
+                return True
             return False
         # Try local
         try:

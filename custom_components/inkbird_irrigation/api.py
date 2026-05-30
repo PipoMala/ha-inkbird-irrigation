@@ -101,6 +101,7 @@ class InkbirdAPI:
         self._connected = False
         self._fail_count = 0
         self._using_cloud = False
+        self._command_lock = False
         self.device = InkbirdDevice()
 
     @property
@@ -271,10 +272,24 @@ class InkbirdAPI:
         self.device.online = False
         return False
 
+    def _wait_for_device(self) -> None:
+        """Wait for device to be ready for next command."""
+        import time
+        # Device needs ~2s between commands on persistent connection
+        while self._command_lock:
+            time.sleep(0.1)
+        self._command_lock = True
+        try:
+            time.sleep(1)  # Minimum gap between commands
+        finally:
+            self._command_lock = False
+
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Turn on a zone for the specified duration (1-180 minutes)."""
         if zone < 1 or zone > NUM_ZONES:
             return False
+        import time
+        self._wait_for_device()
         # If already in cloud mode, go straight to cloud
         if self._using_cloud and self._has_cloud:
             return self._cloud_turn_on(zone, duration_minutes)
@@ -289,6 +304,7 @@ class InkbirdAPI:
                 )
                 d.send(payload)
                 _LOGGER.warning("Zone %d turned ON for %d minutes (local) - dp=%s bitmask=%d", zone, duration_minutes, str(dp_countdown), zone_bitmask)
+                time.sleep(1)  # Wait for device to process before next command
                 return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Local turn_on_zone failed: %s", exc)
@@ -323,6 +339,8 @@ class InkbirdAPI:
         """Turn off a zone."""
         if zone < 1 or zone > NUM_ZONES:
             return False
+        import time
+        self._wait_for_device()
         # If already in cloud mode, go straight to cloud
         if self._using_cloud and self._has_cloud:
             code = f"switch_{zone}"
@@ -336,6 +354,7 @@ class InkbirdAPI:
             if d:
                 d.set_value(DP_ZONE_SWITCH[zone], False)
                 _LOGGER.debug("Zone %d turned OFF (local)", zone)
+                time.sleep(1)
                 return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Local turn_off_zone failed: %s", exc)

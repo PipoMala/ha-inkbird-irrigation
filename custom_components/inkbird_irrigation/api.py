@@ -288,7 +288,7 @@ class InkbirdAPI:
                     tinytuya.CONTROL, {str(dp_countdown): duration_minutes, "110": zone_bitmask}
                 )
                 d.send(payload)
-                _LOGGER.debug("Zone %d turned ON for %d minutes (local)", zone, duration_minutes)
+                _LOGGER.warning("Zone %d turned ON for %d minutes (local) - dp=%s bitmask=%d", zone, duration_minutes, str(dp_countdown), zone_bitmask)
                 return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Local turn_on_zone failed: %s", exc)

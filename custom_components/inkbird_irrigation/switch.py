@@ -67,6 +67,8 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
         from .number import _zone_durations
         entry_id = self.coordinator.entry.entry_id
         duration = _zone_durations.get(entry_id, {}).get(self._zone, 30)
+        import logging
+        logging.getLogger(__name__).warning("Zone %d turn_on with duration=%d (from _zone_durations)", self._zone, duration)
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_on_zone, self._zone, duration
         )

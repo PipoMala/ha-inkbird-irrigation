@@ -227,6 +227,10 @@ class InkbirdAPI:
             try:
                 d = self._ensure_connection()
                 if d:
+                    # Force fresh DP read on persistent connection
+                    d.updatedps()
+                    import time
+                    time.sleep(0.5)
                     status = d.status()
                     if status and "dps" in status:
                         self.device.online = True

@@ -301,12 +301,14 @@ class InkbirdAPI:
         try:
             d = self._ensure_connection()
             if d:
-                dp_countdown = DP_ZONE_COUNTDOWN[zone]
+                # Start zone first via bitmask, then set countdown
+                # Device only accepts countdown changes when zone is running
                 zone_bitmask = 1 << (zone - 1)
-                payload = d.generate_payload(
-                    tinytuya.CONTROL, {str(dp_countdown): duration_minutes, "110": zone_bitmask}
-                )
-                d.send(payload)
+                dp_countdown = DP_ZONE_COUNTDOWN[zone]
+                p = d.generate_payload(tinytuya.CONTROL, {"110": zone_bitmask})
+                d.send(p)
+                time.sleep(0.5)
+                d.set_value(dp_countdown, duration_minutes)
                 _LOGGER.warning("Zone %d turned ON for %d minutes (local) - dp=%s bitmask=%d", zone, duration_minutes, str(dp_countdown), zone_bitmask)
                 time.sleep(1)  # Wait for device to process before next command
                 return True

@@ -2,7 +2,7 @@
 
 [![GitHub Release](https://img.shields.io/github/release/ac-uy/ha-inkbird-irrigation.svg?style=flat-square)](https://github.com/ac-uy/ha-inkbird-irrigation/releases)
 [![HACS](https://img.shields.io/badge/HACS-Custom-orange.svg?style=flat-square)](https://hacs.xyz/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/ac-uy/ha-inkbird-irrigation/blob/master/LICENSE)
 
 A custom Home Assistant integration for the **Inkbird IIC-600-WIFI** smart irrigation controller. Full local control with automatic cloud fallback.
 

@@ -41,6 +41,7 @@ class InkbirdDevice:
         self.seasonal_adjust: int = 0
         self.auto_remaining: int = 0
         self.active_zone: int = 0
+        self.active_zone_seen: bool = False
         self.queued_zone: int = 0
 
         # Per-zone state
@@ -81,6 +82,7 @@ class InkbirdDevice:
             self.auto_remaining = int(dps[str(DP_AUTO_REMAINING)])
         if str(DP_ACTIVE_ZONE) in dps:
             self.active_zone = int(dps[str(DP_ACTIVE_ZONE)])
+            self.active_zone_seen = True
             for zone in range(1, NUM_ZONES + 1):
                 zone_is_active = bool(self.active_zone & (1 << (zone - 1)))
                 self.zone_active[zone] = zone_is_active

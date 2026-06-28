@@ -3,7 +3,7 @@
 DOMAIN = "inkbird_irrigation"
 
 # Tuya protocol
-TUYA_VERSION = 3.4
+TUYA_VERSION = 3.3
 
 # Number of zones on the IIC-600
 NUM_ZONES = 6

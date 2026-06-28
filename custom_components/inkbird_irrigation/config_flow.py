@@ -56,7 +56,10 @@ class InkbirdIrrigationConfigFlow(ConfigFlow, domain=DOMAIN):
                 cloud_ok = await self.hass.async_add_executor_job(api._cloud_update)
                 if cloud_ok:
                     connected = True
-                    _LOGGER.warning("Local connection failed, but cloud API works. Setting up with cloud fallback.")
+                    _LOGGER.warning(
+                        "Local connection failed (%s), but cloud API works. Setting up with cloud fallback.",
+                        api.last_local_error,
+                    )
 
             if connected:
                 # Check for duplicate

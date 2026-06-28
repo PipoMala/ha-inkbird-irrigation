@@ -8,7 +8,7 @@ from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, NUM_ZONES
+from .const import DOMAIN, DP_SEASONAL_ADJUST, NUM_ZONES
 from .coordinator import InkbirdCoordinator
 from .entity import InkbirdEntity
 
@@ -86,6 +86,6 @@ class InkbirdSeasonalAdjust(InkbirdEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set the seasonal adjustment."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 109, int(value)
+            self.coordinator.api.set_dp, DP_SEASONAL_ADJUST, int(value)
         )
         await self.coordinator.async_request_refresh()

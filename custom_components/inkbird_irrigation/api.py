@@ -26,6 +26,43 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+_CLOUD_CODE_TO_DP = {
+    "switch_1": "1", "switch_2": "2", "switch_3": "3",
+    "switch_4": "4", "switch_5": "5", "switch_6": "6",
+    "countdown_1": "13", "countdown_2": "14", "countdown_3": "15",
+    "countdown_4": "16", "countdown_5": "17", "countdown_6": "18",
+    "use_time_1": "25", "use_time_2": "26", "use_time_3": "27",
+    "use_time_4": "28", "use_time_5": "29", "use_time_6": "30",
+    "water_control": str(DP_SYSTEM_POWER),
+    "control_skip": str(DP_SKIP_SCHEDULE),
+    "operation_mode": str(DP_MODE),
+    "RainSen_TotalONOFF": str(DP_RAIN_SENSOR_ENABLED),
+    "SeaAdjValue": str(DP_SEASONAL_ADJUST),
+    "main_switch": str(DP_POWER_SWITCH),
+    "auto_remaining_time": str(DP_AUTO_REMAINING),
+    "zonerun_state": str(DP_ACTIVE_ZONE),
+    "pendingzone_state": str(DP_QUEUED_ZONE),
+}
+
+_CLOUD_COMMAND_CODE_BY_DP = {
+    **{dp: f"switch_{zone}" for zone, dp in DP_ZONE_SWITCH.items()},
+    **{dp: f"countdown_{zone}" for zone, dp in DP_ZONE_COUNTDOWN.items()},
+    DP_SYSTEM_POWER: "water_control",
+    DP_SKIP_SCHEDULE: "control_skip",
+}
+
+_LOCAL_TUYA_VERSIONS = (TUYA_VERSION, 3.3, 3.5)
+
+
+def _cloud_status_items(status: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return cloud status items from Tinytuya or Tuya IoT response shapes."""
+    result = status.get("result")
+    if isinstance(result, list):
+        return result
+    if isinstance(result, dict) and isinstance(result.get("properties"), list):
+        return result["properties"]
+    return []
+
 
 class InkbirdDevice:
     """Represents the state of an Inkbird IIC-600 irrigation controller."""
@@ -97,11 +134,13 @@ class InkbirdAPI:
         self._cloud_api_secret = cloud_api_secret
         self._cloud_api_region = cloud_api_region
         self._tuya: tinytuya.Device | None = None
+        self._tuya_version = TUYA_VERSION
         self._cloud: tinytuya.Cloud | None = None
         self._connected = False
         self._fail_count = 0
         self._using_cloud = False
         self._command_lock = False
+        self.last_local_error: str = ""
         self.device = InkbirdDevice()
 
     @property
@@ -127,22 +166,16 @@ class InkbirdAPI:
             return False
         try:
             status = cloud.getstatus(self._device_id)
-            if not status or not status.get("success") or not status.get("result"):
+            if not status or not status.get("success"):
                 return False
-            # Map cloud status codes to DPs
-            code_to_dp = {
-                "switch_1": "1", "switch_2": "2", "switch_3": "3",
-                "switch_4": "4", "switch_5": "5", "switch_6": "6",
-                "countdown_1": "13", "countdown_2": "14", "countdown_3": "15",
-                "countdown_4": "16", "countdown_5": "17", "countdown_6": "18",
-                "use_time_1": "25", "use_time_2": "26", "use_time_3": "27",
-                "use_time_4": "28", "use_time_5": "29", "use_time_6": "30",
-                "water_control": "40", "control_skip": "43",
-            }
+            items = _cloud_status_items(status)
+            if not items:
+                _LOGGER.debug("Cloud update returned no status items: %r", status)
+                return False
             dps: dict[str, Any] = {}
-            for item in status["result"]:
+            for item in items:
                 code = item.get("code", "")
-                dp = code_to_dp.get(code)
+                dp = _CLOUD_CODE_TO_DP.get(code)
                 if dp:
                     value = item["value"]
                     # Convert cloud enum to local format
@@ -166,9 +199,14 @@ class InkbirdAPI:
         try:
             commands = {"commands": [{"code": code, "value": value}]}
             result = cloud.sendcommand(self._device_id, commands)
-            return result.get("success", False)
+            success = result.get("success", False)
+            if not success:
+                _LOGGER.warning("Cloud command failed for %s=%r: %r", code, value, result)
+            else:
+                _LOGGER.debug("Cloud command succeeded for %s=%r: %r", code, value, result)
+            return success
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Cloud command failed: %s", exc)
+            _LOGGER.warning("Cloud command failed for %s=%r: %s", code, value, exc)
             return False
 
     def _ensure_connection(self) -> tinytuya.Device | None:
@@ -177,7 +215,7 @@ class InkbirdAPI:
             return self._tuya
         try:
             self._tuya = tinytuya.Device(self._device_id, self._device_ip, self._local_key)
-            self._tuya.set_version(TUYA_VERSION)
+            self._tuya.set_version(self._tuya_version)
             self._tuya.set_socketPersistent(True)
             self._tuya.set_socketTimeout(5)
             self._connected = True
@@ -186,6 +224,7 @@ class InkbirdAPI:
             return self._tuya
         except Exception as exc:  # noqa: BLE001
             _LOGGER.debug("Connection setup failed: %s", exc)
+            self.last_local_error = f"Connection setup failed: {exc}"
             self._connected = False
             return None
 
@@ -201,23 +240,40 @@ class InkbirdAPI:
 
     def connect(self) -> bool:
         """Initialize the Tuya device connection."""
-        try:
-            d = self._ensure_connection()
-            if not d:
-                return False
-            status = d.status()
-            if status and "dps" in status:
-                self.device.online = True
-                self.device.update_from_dps(status["dps"])
-                _LOGGER.debug("Connected to Inkbird IIC-600 at %s", self._device_ip)
-                return True
-            _LOGGER.error("No DPs returned from device at %s", self._device_ip)
+        self.last_local_error = ""
+        for version in _LOCAL_TUYA_VERSIONS:
+            self._tuya_version = version
+            try:
+                d = self._ensure_connection()
+                if not d:
+                    continue
+                status = d.status()
+                if status and "dps" in status:
+                    self.device.online = True
+                    self.device.update_from_dps(status["dps"])
+                    _LOGGER.debug(
+                        "Connected to Inkbird IIC-600 at %s using Tuya protocol %.1f",
+                        self._device_ip,
+                        version,
+                    )
+                    return True
+                self.last_local_error = f"No DPs returned with protocol {version}: {status!r}"
+                _LOGGER.warning(
+                    "No DPs returned from device at %s using Tuya protocol %.1f: %r",
+                    self._device_ip,
+                    version,
+                    status,
+                )
+            except Exception as exc:  # noqa: BLE001
+                self.last_local_error = f"Connection failed with protocol {version}: {exc}"
+                _LOGGER.warning(
+                    "Connection failed to %s using Tuya protocol %.1f: %s",
+                    self._device_ip,
+                    version,
+                    exc,
+                )
             self._reset_connection()
-            return False
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.error("Connection failed: %s", exc)
-            self._reset_connection()
-            return False
+        return False
 
     def update(self) -> bool:
         """Poll the device for current state. Falls back to cloud if local fails."""
@@ -336,9 +392,10 @@ class InkbirdAPI:
             if result.get("success", False):
                 _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
                 return True
+            _LOGGER.warning("Cloud turn_on failed for zone %d: %r", zone, result)
             return False
         except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Cloud turn_on failed: %s", exc)
+            _LOGGER.warning("Cloud turn_on failed for zone %d: %s", zone, exc)
             return False
 
     def turn_off_zone(self, zone: int) -> bool:
@@ -391,14 +448,38 @@ class InkbirdAPI:
 
     def set_dp(self, dp: int, value: Any) -> bool:
         """Set a single data point value."""
+        import time
+        self._wait_for_device()
+        if self._using_cloud and self._has_cloud:
+            code = _CLOUD_COMMAND_CODE_BY_DP.get(dp)
+            if code and self._cloud_command(code, value):
+                self.device.update_from_dps({str(dp): value})
+                _LOGGER.debug("Set DP %d = %r (cloud)", dp, value)
+                return True
+            if code:
+                return False
+            _LOGGER.warning("DP %d is not writable via Tuya Cloud", dp)
+            return False
         try:
             d = self._ensure_connection()
             if not d:
-                return False
-            d.set_value(dp, value)
-            _LOGGER.debug("Set DP %d = %r", dp, value)
+                raise RuntimeError("Local connection unavailable")
+            result = d.set_value(dp, value)
+            if result is False or (isinstance(result, dict) and result.get("Error")):
+                raise RuntimeError(f"Device rejected DP {dp} command: {result!r}")
+            self.device.update_from_dps({str(dp): value})
+            _LOGGER.debug("Set DP %d = %r (local): %r", dp, value, result)
+            time.sleep(1)
             return True
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to set DP %d: %s", dp, exc)
             self._reset_connection()
-            return False
+        if self._has_cloud:
+            code = _CLOUD_COMMAND_CODE_BY_DP.get(dp)
+            if code and self._cloud_command(code, value):
+                self.device.update_from_dps({str(dp): value})
+                _LOGGER.debug("Set DP %d = %r (cloud fallback)", dp, value)
+                return True
+            if not code:
+                _LOGGER.warning("DP %d is not writable via Tuya Cloud", dp)
+        return False

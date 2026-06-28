@@ -10,7 +10,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, NUM_ZONES
+from .const import (
+    DOMAIN,
+    DP_POWER_SWITCH,
+    DP_RAIN_SENSOR_ENABLED,
+    DP_SKIP_SCHEDULE,
+    DP_SYSTEM_POWER,
+    NUM_ZONES,
+)
 from .coordinator import InkbirdCoordinator
 from .entity import InkbirdEntity
 
@@ -100,14 +107,14 @@ class InkbirdMainValveSwitch(InkbirdEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on main valve."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 40, "on"
+            self.coordinator.api.set_dp, DP_SYSTEM_POWER, "on"
         )
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off main valve."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 40, "off"
+            self.coordinator.api.set_dp, DP_SYSTEM_POWER, "off"
         )
         await self.coordinator.async_request_refresh()
 
@@ -130,14 +137,14 @@ class InkbirdPowerSwitch(InkbirdEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 102, True
+            self.coordinator.api.set_dp, DP_POWER_SWITCH, True
         )
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 102, False
+            self.coordinator.api.set_dp, DP_POWER_SWITCH, False
         )
         await self.coordinator.async_request_refresh()
 
@@ -160,14 +167,14 @@ class InkbirdRainSensorSwitch(InkbirdEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable rain sensor."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 107, True
+            self.coordinator.api.set_dp, DP_RAIN_SENSOR_ENABLED, True
         )
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable rain sensor."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 107, False
+            self.coordinator.api.set_dp, DP_RAIN_SENSOR_ENABLED, False
         )
         await self.coordinator.async_request_refresh()
 
@@ -190,13 +197,13 @@ class InkbirdSkipScheduleSwitch(InkbirdEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Skip schedule."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 43, True
+            self.coordinator.api.set_dp, DP_SKIP_SCHEDULE, True
         )
         await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Resume schedule."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, 43, False
+            self.coordinator.api.set_dp, DP_SKIP_SCHEDULE, False
         )
         await self.coordinator.async_request_refresh()

@@ -205,10 +205,10 @@ python local/probe_device.py
 | 40 | Main valve control | str (`"on"`/`"off"`) | Read/Write |
 | 43 | Skip schedule | bool | Read/Write |
 | 101 | Mode | str (`"auto"`/`"manual"`) | Read |
-| 102 | Power switch | bool | Read/Write |
-| 103 | Auto-irrigation remaining time | int (minutes) | Read |
-| 107 | Rain sensor enabled | bool | Read/Write |
-| 109 | Seasonal adjustment | int (%) | Read/Write |
+| 102 | Rain sensor enabled | bool | Read/Write |
+| 103 | Seasonal adjustment | int (%) | Read/Write |
+| 107 | Power switch | bool | Read/Write |
+| 109 | Auto-irrigation remaining time | int (minutes) | Read |
 | 110 | Active zone bitmask | int | Read (Write to start zone with duration) |
 | 111 | Queued zone bitmask | int | Read |
 

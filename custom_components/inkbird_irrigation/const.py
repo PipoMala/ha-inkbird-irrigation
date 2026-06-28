@@ -26,10 +26,10 @@ DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}  # placeholder
 DP_SYSTEM_POWER = 40        # str: "on" / "off" — main valve control
 DP_SKIP_SCHEDULE = 43       # bool — skip/pause scheduled irrigation
 DP_MODE = 101               # str: "auto" / "manual"
-DP_POWER_SWITCH = 102       # bool — power on/off
-DP_AUTO_REMAINING = 103     # int: minutes remaining in auto irrigation
-DP_RAIN_SENSOR_ENABLED = 107  # bool — rain sensor main switch
-DP_SEASONAL_ADJUST = 109    # int: seasonal adjustment percentage
+DP_RAIN_SENSOR_ENABLED = 102  # bool — rain sensor main switch
+DP_SEASONAL_ADJUST = 103    # int: seasonal adjustment percentage
+DP_POWER_SWITCH = 107       # bool — power on/off
+DP_AUTO_REMAINING = 109     # int: minutes remaining in auto irrigation
 DP_ACTIVE_ZONE = 110        # int: bitmask of currently active zone
 DP_QUEUED_ZONE = 111        # int: bitmask of queued zone
 

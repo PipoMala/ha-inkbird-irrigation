@@ -51,7 +51,7 @@ _CLOUD_COMMAND_CODE_BY_DP = {
     DP_SKIP_SCHEDULE: "control_skip",
 }
 
-_LOCAL_TUYA_VERSIONS = (TUYA_VERSION, 3.3, 3.5)
+_LOCAL_TUYA_VERSIONS = (3.3, TUYA_VERSION, 3.5)
 
 
 def _cloud_status_items(status: dict[str, Any]) -> list[dict[str, Any]]:

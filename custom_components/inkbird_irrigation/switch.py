@@ -79,14 +79,14 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_on_zone, self._zone, duration
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Close the zone valve."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_off_zone, self._zone
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
 
 class InkbirdMainValveSwitch(InkbirdEntity, SwitchEntity):

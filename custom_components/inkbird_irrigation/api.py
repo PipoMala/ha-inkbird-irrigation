@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import tinytuya
@@ -46,6 +47,7 @@ class InkbirdDevice:
         self.zone_active: dict[int, bool] = {z: False for z in range(1, NUM_ZONES + 1)}
         self.zone_countdown: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
         self.zone_duration: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
+        self.zone_countdown_suppressed_until: dict[int, float] = {z: 0 for z in range(1, NUM_ZONES + 1)}
 
     def update_from_dps(self, dps: dict[str, Any]) -> None:
         """Update device state from Tuya data points."""
@@ -57,7 +59,9 @@ class InkbirdDevice:
             if dp_switch in dps:
                 self.zone_active[zone] = bool(dps[dp_switch])
             if dp_countdown in dps:
-                self.zone_countdown[zone] = int(dps[dp_countdown])
+                countdown = int(dps[dp_countdown])
+                if countdown == 0 or time.monotonic() >= self.zone_countdown_suppressed_until[zone]:
+                    self.zone_countdown[zone] = countdown
             if dp_duration in dps:
                 self.zone_duration[zone] = int(dps[dp_duration])
 
@@ -77,6 +81,11 @@ class InkbirdDevice:
             self.auto_remaining = int(dps[str(DP_AUTO_REMAINING)])
         if str(DP_ACTIVE_ZONE) in dps:
             self.active_zone = int(dps[str(DP_ACTIVE_ZONE)])
+            for zone in range(1, NUM_ZONES + 1):
+                zone_is_active = bool(self.active_zone & (1 << (zone - 1)))
+                self.zone_active[zone] = zone_is_active
+                if not zone_is_active:
+                    self.zone_countdown[zone] = 0
         if str(DP_QUEUED_ZONE) in dps:
             self.queued_zone = int(dps[str(DP_QUEUED_ZONE)])
 
@@ -102,6 +111,7 @@ class InkbirdAPI:
         self._fail_count = 0
         self._using_cloud = False
         self._command_lock = False
+        self.last_update_error = ""
         self.device = InkbirdDevice()
 
     @property
@@ -221,6 +231,9 @@ class InkbirdAPI:
 
     def update(self) -> bool:
         """Poll the device for current state. Falls back to cloud if local fails."""
+        if self._command_lock:
+            return True
+        self.last_update_error = ""
         # If already using cloud (local was down at setup), skip local attempt
         if not self._using_cloud:
             # Try local first
@@ -237,11 +250,14 @@ class InkbirdAPI:
                         self.device.update_from_dps(status["dps"])
                         self._fail_count = 0
                         return True
+                    self.last_update_error = f"Local status returned no dps: {status!r}"
                     self._fail_count += 1
                 else:
+                    self.last_update_error = "Local connection unavailable"
                     self._fail_count += 1
             except Exception as exc:  # noqa: BLE001
-                _LOGGER.debug("Local update failed: %s", exc)
+                self.last_update_error = f"Local update failed: {exc}"
+                _LOGGER.debug("%s", self.last_update_error)
                 self._fail_count += 1
 
             # Reset local connection after failures
@@ -272,6 +288,7 @@ class InkbirdAPI:
                         pass
                 self._fail_count += 1
                 return True
+            self.last_update_error = self.last_update_error or "Cloud update failed"
 
         self.device.online = False
         return False
@@ -283,42 +300,50 @@ class InkbirdAPI:
         while self._command_lock:
             time.sleep(0.1)
         self._command_lock = True
-        try:
-            time.sleep(1)  # Minimum gap between commands
-        finally:
-            self._command_lock = False
+        time.sleep(1)  # Minimum gap between commands
+
+    def _release_device(self) -> None:
+        """Allow polling or the next command after the current command finishes."""
+        self._command_lock = False
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Turn on a zone for the specified duration (1-180 minutes)."""
         if zone < 1 or zone > NUM_ZONES:
             return False
         import time
+        self.device.zone_countdown_suppressed_until[zone] = 0
         self._wait_for_device()
-        # If already in cloud mode, go straight to cloud
-        if self._using_cloud and self._has_cloud:
-            return self._cloud_turn_on(zone, duration_minutes)
-        # Try local
         try:
-            d = self._ensure_connection()
-            if d:
-                # Start zone first via bitmask, then set countdown
-                # Device only accepts countdown changes when zone is running
-                zone_bitmask = 1 << (zone - 1)
-                dp_countdown = DP_ZONE_COUNTDOWN[zone]
-                p = d.generate_payload(tinytuya.CONTROL, {"110": zone_bitmask})
-                d.send(p)
-                time.sleep(0.5)
-                d.set_value(dp_countdown, duration_minutes)
-                _LOGGER.warning("Zone %d turned ON for %d minutes (local) - dp=%s bitmask=%d", zone, duration_minutes, str(dp_countdown), zone_bitmask)
-                time.sleep(1)  # Wait for device to process before next command
-                return True
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Local turn_on_zone failed: %s", exc)
-            self._reset_connection()
-        # Fall back to cloud
-        if self._has_cloud:
-            return self._cloud_turn_on(zone, duration_minutes)
-        return False
+            # If already in cloud mode, go straight to cloud
+            if self._using_cloud and self._has_cloud:
+                return self._cloud_turn_on(zone, duration_minutes)
+            # Try local
+            try:
+                d = self._ensure_connection()
+                if d:
+                    # Start zone first, then set countdown just like the cloud API.
+                    # Device only accepts countdown changes when zone is running
+                    dp_countdown = DP_ZONE_COUNTDOWN[zone]
+                    d.set_value(DP_ZONE_SWITCH[zone], True)
+                    time.sleep(0.5)
+                    d.set_value(dp_countdown, duration_minutes)
+                    self.device.update_from_dps({
+                        str(DP_ZONE_SWITCH[zone]): True,
+                        str(dp_countdown): duration_minutes,
+                        str(DP_ACTIVE_ZONE): 1 << (zone - 1),
+                    })
+                    _LOGGER.warning("Zone %d turned ON for %d minutes (local) - dp=%s", zone, duration_minutes, str(dp_countdown))
+                    time.sleep(1)  # Wait for device to process before next command
+                    return True
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("Local turn_on_zone failed: %s", exc)
+                self._reset_connection()
+            # Fall back to cloud
+            if self._has_cloud:
+                return self._cloud_turn_on(zone, duration_minutes)
+            return False
+        finally:
+            self._release_device()
 
     def _cloud_turn_on(self, zone: int, duration_minutes: int) -> bool:
         """Start a zone via cloud API."""
@@ -334,6 +359,11 @@ class InkbirdAPI:
             ]}
             result = cloud.sendcommand(self._device_id, commands)
             if result.get("success", False):
+                self.device.update_from_dps({
+                    str(DP_ZONE_SWITCH[zone]): True,
+                    str(DP_ZONE_COUNTDOWN[zone]): duration_minutes,
+                    str(DP_ACTIVE_ZONE): 1 << (zone - 1),
+                })
                 _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
                 return True
             return False
@@ -347,31 +377,49 @@ class InkbirdAPI:
             return False
         import time
         self._wait_for_device()
-        # If already in cloud mode, go straight to cloud
-        if self._using_cloud and self._has_cloud:
-            code = f"switch_{zone}"
-            if self._cloud_command(code, False):
-                _LOGGER.debug("Zone %d turned OFF (cloud)", zone)
-                return True
-            return False
-        # Try local
         try:
-            d = self._ensure_connection()
-            if d:
-                d.set_value(DP_ZONE_SWITCH[zone], False)
-                _LOGGER.debug("Zone %d turned OFF (local)", zone)
-                time.sleep(1)
-                return True
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Local turn_off_zone failed: %s", exc)
-            self._reset_connection()
-        # Fall back to cloud
-        if self._has_cloud:
-            code = f"switch_{zone}"
-            if self._cloud_command(code, False):
-                _LOGGER.debug("Zone %d turned OFF (cloud)", zone)
-                return True
-        return False
+            # If already in cloud mode, go straight to cloud
+            if self._using_cloud and self._has_cloud:
+                code = f"switch_{zone}"
+                if self._cloud_command(code, False):
+                    self.device.zone_countdown_suppressed_until[zone] = time.monotonic() + 180
+                    self.device.update_from_dps({
+                        str(DP_ZONE_SWITCH[zone]): False,
+                        str(DP_ZONE_COUNTDOWN[zone]): 0,
+                    })
+                    _LOGGER.debug("Zone %d turned OFF (cloud)", zone)
+                    return True
+                return False
+            # Try local
+            try:
+                d = self._ensure_connection()
+                if d:
+                    d.set_value(DP_ZONE_SWITCH[zone], False)
+                    self.device.zone_countdown_suppressed_until[zone] = time.monotonic() + 180
+                    self.device.update_from_dps({
+                        str(DP_ZONE_SWITCH[zone]): False,
+                        str(DP_ZONE_COUNTDOWN[zone]): 0,
+                    })
+                    _LOGGER.debug("Zone %d turned OFF (local)", zone)
+                    time.sleep(1)
+                    return True
+            except Exception as exc:  # noqa: BLE001
+                _LOGGER.debug("Local turn_off_zone failed: %s", exc)
+                self._reset_connection()
+            # Fall back to cloud
+            if self._has_cloud:
+                code = f"switch_{zone}"
+                if self._cloud_command(code, False):
+                    self.device.zone_countdown_suppressed_until[zone] = time.monotonic() + 180
+                    self.device.update_from_dps({
+                        str(DP_ZONE_SWITCH[zone]): False,
+                        str(DP_ZONE_COUNTDOWN[zone]): 0,
+                    })
+                    _LOGGER.debug("Zone %d turned OFF (cloud)", zone)
+                    return True
+            return False
+        finally:
+            self._release_device()
 
     def set_zone_duration(self, zone: int, duration_minutes: int) -> bool:
         """Set the default duration for a zone."""
@@ -391,6 +439,7 @@ class InkbirdAPI:
 
     def set_dp(self, dp: int, value: Any) -> bool:
         """Set a single data point value."""
+        self._wait_for_device()
         try:
             d = self._ensure_connection()
             if not d:
@@ -402,3 +451,5 @@ class InkbirdAPI:
             _LOGGER.error("Failed to set DP %d: %s", dp, exc)
             self._reset_connection()
             return False
+        finally:
+            self._release_device()

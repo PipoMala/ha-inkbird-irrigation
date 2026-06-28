@@ -39,5 +39,6 @@ class InkbirdCoordinator(DataUpdateCoordinator[InkbirdDevice]):
         """Fetch latest state from the device."""
         success = await self.hass.async_add_executor_job(self.api.update)
         if not success:
-            raise UpdateFailed("Failed to fetch state from Inkbird IIC-600")
+            reason = self.api.last_update_error or "unknown reason"
+            raise UpdateFailed(f"Failed to fetch state from Inkbird IIC-600: {reason}")
         return self.api.device

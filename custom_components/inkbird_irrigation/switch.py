@@ -74,11 +74,26 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Open the zone valve with the configured duration."""
-        from .number import _zone_durations
+        from .number import _seasonal_adjustments, _zone_durations
         entry_id = self.coordinator.entry.entry_id
-        duration = _zone_durations.get(entry_id, {}).get(self._zone, 30)
-        import logging
-        logging.getLogger(__name__).warning("Zone %d turn_on with duration=%d (from _zone_durations)", self._zone, duration)
+        base_duration = _zone_durations.get(entry_id, {}).get(self._zone, 30)
+        seasonal_adjustment = _seasonal_adjustments.get(entry_id, 100)
+        duration = round(base_duration * seasonal_adjustment / 100)
+        if duration <= 0:
+            _LOGGER.debug(
+                "Zone %d skipped: base_duration=%d, seasonal_adjustment=%d%%",
+                self._zone,
+                base_duration,
+                seasonal_adjustment,
+            )
+            return
+        _LOGGER.debug(
+            "Zone %d turn_on with adjusted duration=%d (base=%d, seasonal_adjustment=%d%%)",
+            self._zone,
+            duration,
+            base_duration,
+            seasonal_adjustment,
+        )
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_on_zone, self._zone, duration
         )

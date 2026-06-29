@@ -89,6 +89,7 @@ Before installing this integration, you need your device's **Local Key** from th
 | `switch.inkbird_iic_600_rain_sensor` | Switch | Rain sensor enable/disable |
 | `switch.inkbird_iic_600_power` | Switch | System power |
 | `number.inkbird_iic_600_zone_1_duration` - `zone_6` | Number | Duration setting (1-180 minutes) |
+| `number.inkbird_iic_600_seasonal_adjust` | Number | Local seasonal adjustment applied to watering duration (0-100%) |
 | `sensor.inkbird_iic_600_zone_1_time_remaining` - `zone_6` | Sensor | Countdown (minutes remaining) |
 | `sensor.inkbird_iic_600_zone_1_time_elapsed` - `zone_6` | Sensor | Elapsed time (minutes running) |
 | `sensor.inkbird_iic_600_mode` | Sensor | Operating mode (auto/manual) |
@@ -161,6 +162,7 @@ automation:
 - **No cloud dependency**: Works entirely on your local network
 - **Zones**: Sequential only — one zone runs at a time (hardware limitation)
 - **Duration**: 1-180 minutes per zone, configurable via number entity
+- **Seasonal adjustment**: local 0-100% multiplier applied when a zone starts; it is not written to the device
 
 ## Development
 
@@ -206,7 +208,7 @@ python local/probe_device.py
 | 43 | Skip schedule | bool | Read/Write |
 | 101 | Mode | str (`"auto"`/`"manual"`) | Read |
 | 102 | Rain sensor enabled | bool | Read/Write |
-| 103 | Seasonal adjustment | int (%) | Read/Write |
+| 103 | Seasonal adjustment | int (%) | Observed; HA applies seasonal adjustment locally without writing this DP |
 | 107 | Power switch | bool | Read/Write |
 | 109 | Auto-irrigation remaining time | int (minutes) | Read |
 | 110 | Active zone bitmask | int | Read (Write to start zone with duration) |

@@ -8,12 +8,13 @@ from homeassistant.const import UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, DP_SEASONAL_ADJUST, NUM_ZONES
+from .const import DOMAIN, NUM_ZONES
 from .coordinator import InkbirdCoordinator
 from .entity import InkbirdEntity
 
 # Store duration preferences locally (not on device)
 _zone_durations: dict[str, dict[int, int]] = {}
+_seasonal_adjustments: dict[str, int] = {}
 
 
 async def async_setup_entry(
@@ -24,6 +25,7 @@ async def async_setup_entry(
     """Set up Inkbird duration number entities."""
     coordinator: InkbirdCoordinator = hass.data[DOMAIN][entry.entry_id]
     _zone_durations.setdefault(entry.entry_id, {z: 30 for z in range(1, NUM_ZONES + 1)})
+    _seasonal_adjustments.setdefault(entry.entry_id, 100)
     
     entities: list[NumberEntity] = []
     for zone in range(1, NUM_ZONES + 1):
@@ -81,11 +83,9 @@ class InkbirdSeasonalAdjust(InkbirdEntity, NumberEntity):
     @property
     def native_value(self) -> float:
         """Return the current seasonal adjustment."""
-        return self.coordinator.api.device.seasonal_adjust
+        return _seasonal_adjustments.get(self.coordinator.entry.entry_id, 100)
 
     async def async_set_native_value(self, value: float) -> None:
-        """Set the seasonal adjustment."""
-        await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_SEASONAL_ADJUST, int(value)
-        )
-        await self.coordinator.async_request_refresh()
+        """Set the local seasonal adjustment."""
+        _seasonal_adjustments[self.coordinator.entry.entry_id] = int(value)
+        self.async_write_ha_state()

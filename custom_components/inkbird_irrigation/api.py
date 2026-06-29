@@ -54,6 +54,30 @@ class InkbirdDevice:
         self.zone_duration: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
         self.zone_countdown_suppressed_until: dict[int, float] = {z: 0 for z in range(1, NUM_ZONES + 1)}
 
+        # Debounce candidates for stable booleans/enums that occasionally come
+        # back with a transient wrong value in a partial/garbled status() poll.
+        self._pending_states: dict[str, Any] = {}
+
+    def _commit_debounced(self, attr: str, new_value: Any, confirmed: bool = False) -> None:
+        """Commit a value only once it appears in two consecutive polls.
+
+        Rejects phantom values from occasional partial or garbled status()
+        payloads (e.g. ``main_switch`` momentarily read as False mid-run).
+        ``confirmed=True`` commits immediately, for deliberate command writes.
+        """
+        if confirmed:
+            setattr(self, attr, new_value)
+            self._pending_states.pop(attr, None)
+            return
+        if new_value == getattr(self, attr):
+            self._pending_states.pop(attr, None)
+            return
+        if self._pending_states.get(attr) == new_value:
+            setattr(self, attr, new_value)
+            self._pending_states.pop(attr, None)
+        else:
+            self._pending_states[attr] = new_value
+
     def snapshot(self) -> "InkbirdDevice":
         """Return a copy with independent dicts for a consistent, thread-safe read.
 
@@ -78,7 +102,7 @@ class InkbirdDevice:
         new.zone_countdown_suppressed_until = dict(self.zone_countdown_suppressed_until)
         return new
 
-    def update_from_dps(self, dps: dict[str, Any]) -> None:
+    def update_from_dps(self, dps: dict[str, Any], confirmed: bool = False) -> None:
         """Update device state from Tuya data points."""
         for zone in range(1, NUM_ZONES + 1):
             dp_switch = str(DP_ZONE_SWITCH[zone])
@@ -97,9 +121,9 @@ class InkbirdDevice:
         if str(DP_SYSTEM_POWER) in dps:
             self.system_power = dps[str(DP_SYSTEM_POWER)]
         if str(DP_MODE) in dps:
-            self.mode = dps[str(DP_MODE)]
+            self._commit_debounced("mode", dps[str(DP_MODE)], confirmed)
         if str(DP_POWER_SWITCH) in dps:
-            self.power_switch = bool(dps[str(DP_POWER_SWITCH)])
+            self._commit_debounced("power_switch", bool(dps[str(DP_POWER_SWITCH)]), confirmed)
         if str(DP_SKIP_SCHEDULE) in dps:
             self.skip_schedule = bool(dps[str(DP_SKIP_SCHEDULE)])
         if str(DP_RAIN_SENSOR_ENABLED) in dps:
@@ -493,7 +517,7 @@ class InkbirdAPI:
             if not d:
                 return False
             d.set_value(dp, value)
-            self.device.update_from_dps({str(dp): value})
+            self.device.update_from_dps({str(dp): value}, confirmed=True)
             _LOGGER.debug("Set DP %d = %r", dp, value)
             return True
         except Exception as exc:  # noqa: BLE001

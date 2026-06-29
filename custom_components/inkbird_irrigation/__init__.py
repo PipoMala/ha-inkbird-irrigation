@@ -37,12 +37,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     connected = await hass.async_add_executor_job(api.connect)
     if not connected:
         # If cloud is available, allow setup anyway (cloud fallback will work)
-        if api._has_cloud:
-            cloud_ok = await hass.async_add_executor_job(api._cloud_update)
+        if api.has_cloud:
+            cloud_ok = await hass.async_add_executor_job(api.enable_cloud_fallback)
             if not cloud_ok:
                 raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600 (local and cloud both failed)")
             _LOGGER.warning("Local connection failed, starting with cloud fallback")
-            api._using_cloud = True
         else:
             raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600")
 
@@ -59,5 +58,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     if unload_ok := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
-        hass.data[DOMAIN].pop(entry.entry_id)
+        coordinator: InkbirdCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await hass.async_add_executor_job(coordinator.api.disconnect)
     return unload_ok

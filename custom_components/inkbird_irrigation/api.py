@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Any
 
@@ -27,6 +28,9 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# When running on the cloud fallback, how often to retry the local connection.
+LOCAL_RETRY_INTERVAL = 300  # seconds (~5 minutes)
+
 
 class InkbirdDevice:
     """Represents the state of an Inkbird IIC-600 irrigation controller."""
@@ -49,6 +53,30 @@ class InkbirdDevice:
         self.zone_countdown: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
         self.zone_duration: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
         self.zone_countdown_suppressed_until: dict[int, float] = {z: 0 for z in range(1, NUM_ZONES + 1)}
+
+    def snapshot(self) -> "InkbirdDevice":
+        """Return a copy with independent dicts for a consistent, thread-safe read.
+
+        Each ``dict(...)`` copy is atomic under the GIL, so the returned object is
+        safe to read from the event loop while the executor mutates the live one.
+        """
+        new = InkbirdDevice()
+        new.online = self.online
+        new.system_power = self.system_power
+        new.mode = self.mode
+        new.power_switch = self.power_switch
+        new.skip_schedule = self.skip_schedule
+        new.rain_sensor_enabled = self.rain_sensor_enabled
+        new.seasonal_adjust = self.seasonal_adjust
+        new.auto_remaining = self.auto_remaining
+        new.active_zone = self.active_zone
+        new.active_zone_seen = self.active_zone_seen
+        new.queued_zone = self.queued_zone
+        new.zone_active = dict(self.zone_active)
+        new.zone_countdown = dict(self.zone_countdown)
+        new.zone_duration = dict(self.zone_duration)
+        new.zone_countdown_suppressed_until = dict(self.zone_countdown_suppressed_until)
+        return new
 
     def update_from_dps(self, dps: dict[str, Any]) -> None:
         """Update device state from Tuya data points."""
@@ -112,13 +140,44 @@ class InkbirdAPI:
         self._connected = False
         self._fail_count = 0
         self._using_cloud = False
-        self._command_lock = False
+        self._command_lock = threading.Lock()
+        self._last_local_retry = 0.0
         self.last_update_error = ""
         self.device = InkbirdDevice()
 
     @property
     def _has_cloud(self) -> bool:
         return bool(self._cloud_api_key and self._cloud_api_secret)
+
+    @property
+    def has_cloud(self) -> bool:
+        """Whether cloud fallback credentials are configured."""
+        return self._has_cloud
+
+    @property
+    def using_cloud(self) -> bool:
+        """Whether the API is currently using the cloud connection."""
+        return self._using_cloud
+
+    @property
+    def fail_count(self) -> int:
+        """Number of consecutive local update failures."""
+        return self._fail_count
+
+    def validate_cloud(self) -> bool:
+        """Validate cloud credentials by performing a cloud poll."""
+        return self._cloud_update()
+
+    def enable_cloud_fallback(self) -> bool:
+        """Switch to the cloud connection. Returns True if the cloud poll succeeds."""
+        if self._cloud_update():
+            self._using_cloud = True
+            return True
+        return False
+
+    def disconnect(self) -> None:
+        """Close the persistent connection (call on unload)."""
+        self._reset_connection()
 
     def _get_cloud(self) -> tinytuya.Cloud | None:
         """Get or create cloud client."""
@@ -233,8 +292,16 @@ class InkbirdAPI:
 
     def update(self) -> bool:
         """Poll the device for current state. Falls back to cloud if local fails."""
-        if self._command_lock:
+        # Skip this poll if a command is in progress; the command refreshes state.
+        if not self._command_lock.acquire(blocking=False):
             return True
+        try:
+            return self._poll()
+        finally:
+            self._command_lock.release()
+
+    def _poll(self) -> bool:
+        """Perform the actual polling. Caller must hold the command lock."""
         self.last_update_error = ""
         # If already using cloud (local was down at setup), skip local attempt
         if not self._using_cloud:
@@ -244,7 +311,6 @@ class InkbirdAPI:
                 if d:
                     # Force fresh DP read on persistent connection
                     d.updatedps()
-                    import time
                     time.sleep(0.5)
                     status = d.status()
                     if status and "dps" in status:
@@ -270,12 +336,15 @@ class InkbirdAPI:
             if self._has_cloud and self._fail_count >= 2:
                 _LOGGER.warning("Local connection failed %d times, falling back to cloud API", self._fail_count)
                 self._using_cloud = True
+                self._last_local_retry = time.monotonic()
 
         # Use cloud (either as fallback or primary when local is down)
         if self._using_cloud and self._has_cloud:
             if self._cloud_update():
-                # Periodically try to restore local (every 20 polls = ~5 min)
-                if self._fail_count % 20 == 0:
+                # Periodically try to restore the local connection.
+                now = time.monotonic()
+                if now - self._last_local_retry >= LOCAL_RETRY_INTERVAL:
+                    self._last_local_retry = now
                     self._reset_connection()
                     try:
                         d = self._ensure_connection()
@@ -288,7 +357,6 @@ class InkbirdAPI:
                                 self.device.update_from_dps(status["dps"])
                     except Exception:  # noqa: BLE001
                         pass
-                self._fail_count += 1
                 return True
             self.last_update_error = self.last_update_error or "Cloud update failed"
 
@@ -296,23 +364,18 @@ class InkbirdAPI:
         return False
 
     def _wait_for_device(self) -> None:
-        """Wait for device to be ready for next command."""
-        import time
-        # Device needs ~2s between commands on persistent connection
-        while self._command_lock:
-            time.sleep(0.1)
-        self._command_lock = True
+        """Acquire the command lock and wait for the device to be ready."""
+        self._command_lock.acquire()
         time.sleep(1)  # Minimum gap between commands
 
     def _release_device(self) -> None:
-        """Allow polling or the next command after the current command finishes."""
-        self._command_lock = False
+        """Release the command lock after the current command finishes."""
+        self._command_lock.release()
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Turn on a zone for the specified duration (1-180 minutes)."""
         if zone < 1 or zone > NUM_ZONES:
             return False
-        import time
         self.device.zone_countdown_suppressed_until[zone] = 0
         self._wait_for_device()
         try:
@@ -377,7 +440,6 @@ class InkbirdAPI:
         """Turn off a zone."""
         if zone < 1 or zone > NUM_ZONES:
             return False
-        import time
         self._wait_for_device()
         try:
             # If already in cloud mode, go straight to cloud
@@ -422,22 +484,6 @@ class InkbirdAPI:
             return False
         finally:
             self._release_device()
-
-    def set_zone_duration(self, zone: int, duration_minutes: int) -> bool:
-        """Set the default duration for a zone."""
-        if zone < 1 or zone > NUM_ZONES:
-            return False
-        try:
-            d = self._ensure_connection()
-            if not d:
-                return False
-            dp_duration = DP_ZONE_DURATION[zone]
-            d.set_value(dp_duration, duration_minutes)
-            return True
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.error("Failed to set duration for zone %d: %s", zone, exc)
-            self._reset_connection()
-            return False
 
     def set_dp(self, dp: int, value: Any) -> bool:
         """Set a single data point value."""

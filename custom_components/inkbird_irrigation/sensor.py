@@ -53,7 +53,7 @@ class InkbirdZoneCountdownSensor(InkbirdEntity, SensorEntity):
     @property
     def native_value(self) -> int:
         """Return the countdown in minutes."""
-        return self.coordinator.api.device.zone_countdown.get(self._zone, 0)
+        return self.coordinator.data.zone_countdown.get(self._zone, 0)
 
 
 class InkbirdZoneElapsedSensor(InkbirdEntity, SensorEntity):
@@ -72,7 +72,7 @@ class InkbirdZoneElapsedSensor(InkbirdEntity, SensorEntity):
     @property
     def native_value(self) -> int:
         """Return the elapsed time in minutes."""
-        return self.coordinator.api.device.zone_duration.get(self._zone, 0)
+        return self.coordinator.data.zone_duration.get(self._zone, 0)
 
 
 class InkbirdModeSensor(InkbirdEntity, SensorEntity):
@@ -88,7 +88,7 @@ class InkbirdModeSensor(InkbirdEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         """Return the current mode."""
-        return self.coordinator.api.device.mode
+        return self.coordinator.data.mode
 
 
 class InkbirdConnectionModeSensor(InkbirdEntity, SensorEntity):
@@ -104,7 +104,7 @@ class InkbirdConnectionModeSensor(InkbirdEntity, SensorEntity):
     @property
     def native_value(self) -> str:
         """Return the current connection mode."""
-        if self.coordinator.api._using_cloud:
+        if self.coordinator.api.using_cloud:
             return "cloud"
         return "local"
 
@@ -112,6 +112,6 @@ class InkbirdConnectionModeSensor(InkbirdEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         """Return extra attributes."""
         return {
-            "fail_count": self.coordinator.api._fail_count,
-            "cloud_available": self.coordinator.api._has_cloud,
+            "fail_count": self.coordinator.api.fail_count,
+            "cloud_available": self.coordinator.api.has_cloud,
         }

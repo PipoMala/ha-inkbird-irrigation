@@ -45,7 +45,6 @@ class InkbirdDevice:
         self.seasonal_adjust: int = 0
         self.auto_remaining: int = 0
         self.active_zone: int = 0
-        self.active_zone_seen: bool = False
         self.queued_zone: int = 0
 
         # Per-zone state
@@ -94,7 +93,6 @@ class InkbirdDevice:
         new.seasonal_adjust = self.seasonal_adjust
         new.auto_remaining = self.auto_remaining
         new.active_zone = self.active_zone
-        new.active_zone_seen = self.active_zone_seen
         new.queued_zone = self.queued_zone
         new.zone_active = dict(self.zone_active)
         new.zone_countdown = dict(self.zone_countdown)
@@ -133,13 +131,12 @@ class InkbirdDevice:
         if str(DP_AUTO_REMAINING) in dps:
             self.auto_remaining = int(dps[str(DP_AUTO_REMAINING)])
         if str(DP_ACTIVE_ZONE) in dps:
+            # DP 110 ("zonerun_state") reports the running zone, but its encoding
+            # (index vs bitmask) is not reliable across firmware revisions, so it
+            # is stored for reference only and is NOT used to derive per-zone
+            # on/off state. Zone state comes from the unambiguous per-zone switch
+            # DPs (1-6) handled above.
             self.active_zone = int(dps[str(DP_ACTIVE_ZONE)])
-            self.active_zone_seen = True
-            for zone in range(1, NUM_ZONES + 1):
-                zone_is_active = bool(self.active_zone & (1 << (zone - 1)))
-                self.zone_active[zone] = zone_is_active
-                if not zone_is_active:
-                    self.zone_countdown[zone] = 0
         if str(DP_QUEUED_ZONE) in dps:
             self.queued_zone = int(dps[str(DP_QUEUED_ZONE)])
 
@@ -419,9 +416,8 @@ class InkbirdAPI:
                     self.device.update_from_dps({
                         str(DP_ZONE_SWITCH[zone]): True,
                         str(dp_countdown): duration_minutes,
-                        str(DP_ACTIVE_ZONE): 1 << (zone - 1),
                     })
-                    _LOGGER.warning("Zone %d turned ON for %d minutes (local) - dp=%s", zone, duration_minutes, str(dp_countdown))
+                    _LOGGER.debug("Zone %d turned ON for %d minutes (local) - dp=%s", zone, duration_minutes, str(dp_countdown))
                     time.sleep(1)  # Wait for device to process before next command
                     return True
             except Exception as exc:  # noqa: BLE001
@@ -451,7 +447,6 @@ class InkbirdAPI:
                 self.device.update_from_dps({
                     str(DP_ZONE_SWITCH[zone]): True,
                     str(DP_ZONE_COUNTDOWN[zone]): duration_minutes,
-                    str(DP_ACTIVE_ZONE): 1 << (zone - 1),
                 })
                 _LOGGER.debug("Zone %d turned ON for %d minutes (cloud)", zone, duration_minutes)
                 return True

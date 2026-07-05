@@ -64,34 +64,22 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
     def is_on(self) -> bool:
         """Return True if the zone valve is open."""
         device = self.coordinator.data
+        # The device can momentarily report the per-zone switch as False while a
+        # zone is actually running, so a positive countdown also counts as "on".
         switch_state = device.zone_active.get(self._zone, False)
-        if device.active_zone_seen:
-            return switch_state
-
-        # Fallback for devices/cloud states that do not expose DP 110.
         countdown = device.zone_countdown.get(self._zone, 0)
         return switch_state or countdown > 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Open the zone valve with the configured duration."""
-        base_duration = self.coordinator.zone_durations.get(self._zone, 30)
-        seasonal_adjustment = self.coordinator.seasonal_adjustment
-        duration = round(base_duration * seasonal_adjustment / 100)
-        if duration <= 0:
-            _LOGGER.debug(
-                "Zone %d skipped: base_duration=%d, seasonal_adjustment=%d%%",
-                self._zone,
-                base_duration,
-                seasonal_adjustment,
-            )
-            return
-        _LOGGER.debug(
-            "Zone %d turn_on with adjusted duration=%d (base=%d, seasonal_adjustment=%d%%)",
-            self._zone,
-            duration,
-            base_duration,
-            seasonal_adjustment,
-        )
+        """Open the zone valve for the configured duration.
+
+        The duration is used verbatim. Any seasonal scaling is applied on the HA
+        side (by the schedule automation or the card) before this is called, so
+        the integration never re-scales it and never writes the device seasonal
+        DP.
+        """
+        duration = self.coordinator.zone_durations.get(self._zone, 30)
+        _LOGGER.debug("Zone %d turn_on with duration=%d min", self._zone, duration)
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_on_zone, self._zone, duration
         )

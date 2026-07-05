@@ -11,7 +11,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.const import Platform
 
 from .api import InkbirdAPI
-from .const import CONF_CLOUD_API_KEY, CONF_CLOUD_API_REGION, CONF_CLOUD_API_SECRET, CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
+from .const import CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
 from .coordinator import InkbirdCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -20,6 +20,7 @@ PLATFORMS: list[Platform] = [
     Platform.SWITCH,
     Platform.SENSOR,
     Platform.NUMBER,
+    Platform.SELECT,
 ]
 
 
@@ -29,21 +30,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data[CONF_DEVICE_ID],
         entry.data[CONF_LOCAL_KEY],
         entry.data[CONF_DEVICE_IP],
-        cloud_api_key=entry.data.get(CONF_CLOUD_API_KEY, ""),
-        cloud_api_secret=entry.data.get(CONF_CLOUD_API_SECRET, ""),
-        cloud_api_region=entry.data.get(CONF_CLOUD_API_REGION, "eu"),
     )
 
     connected = await hass.async_add_executor_job(api.connect)
     if not connected:
-        # If cloud is available, allow setup anyway (cloud fallback will work)
-        if api.has_cloud:
-            cloud_ok = await hass.async_add_executor_job(api.enable_cloud_fallback)
-            if not cloud_ok:
-                raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600 (local and cloud both failed)")
-            _LOGGER.warning("Local connection failed, starting with cloud fallback")
-        else:
-            raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600")
+        raise ConfigEntryNotReady("Cannot connect to Inkbird IIC-600")
 
     coordinator = InkbirdCoordinator(hass, api, entry)
     await coordinator.async_config_entry_first_refresh()

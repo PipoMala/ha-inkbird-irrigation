@@ -11,7 +11,7 @@ from homeassistant.config_entries import ConfigFlow
 from homeassistant.data_entry_flow import FlowResult
 
 from .api import InkbirdAPI
-from .const import CONF_CLOUD_API_KEY, CONF_CLOUD_API_REGION, CONF_CLOUD_API_SECRET, CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
+from .const import CONF_DEVICE_ID, CONF_DEVICE_IP, CONF_DEVICE_NAME, CONF_LOCAL_KEY, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,9 +21,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_DEVICE_ID): str,
         vol.Required(CONF_LOCAL_KEY): str,
         vol.Required(CONF_DEVICE_IP): str,
-        vol.Optional(CONF_CLOUD_API_KEY): str,
-        vol.Optional(CONF_CLOUD_API_SECRET): str,
-        vol.Optional(CONF_CLOUD_API_REGION, default="eu"): str,
     }
 )
 
@@ -40,23 +37,13 @@ class InkbirdIrrigationConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Test connection - try local first, then cloud
+            # Test the local connection.
             api = InkbirdAPI(
                 user_input[CONF_DEVICE_ID],
                 user_input[CONF_LOCAL_KEY],
                 user_input[CONF_DEVICE_IP],
-                cloud_api_key=user_input.get(CONF_CLOUD_API_KEY, ""),
-                cloud_api_secret=user_input.get(CONF_CLOUD_API_SECRET, ""),
-                cloud_api_region=user_input.get(CONF_CLOUD_API_REGION, "eu"),
             )
             connected = await self.hass.async_add_executor_job(api.connect)
-
-            if not connected and api.has_cloud:
-                # Local failed but we have cloud - try cloud to validate credentials
-                cloud_ok = await self.hass.async_add_executor_job(api.validate_cloud)
-                if cloud_ok:
-                    connected = True
-                    _LOGGER.warning("Local connection failed, but cloud API works. Setting up with cloud fallback.")
 
             if connected:
                 # Check for duplicate

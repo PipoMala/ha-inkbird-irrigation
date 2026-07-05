@@ -32,7 +32,6 @@ async def async_setup_entry(
 
     # System sensors
     entities.append(InkbirdModeSensor(coordinator))
-    entities.append(InkbirdConnectionModeSensor(coordinator))
 
     async_add_entities(entities)
 
@@ -89,29 +88,3 @@ class InkbirdModeSensor(InkbirdEntity, SensorEntity):
     def native_value(self) -> str:
         """Return the current mode."""
         return self.coordinator.data.mode
-
-
-class InkbirdConnectionModeSensor(InkbirdEntity, SensorEntity):
-    """Sensor showing whether the integration is using local or cloud connection."""
-
-    _attr_icon = "mdi:connection"
-
-    def __init__(self, coordinator: InkbirdCoordinator) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{DOMAIN}_{self._device_id}_connection_mode"
-        self._attr_name = "Connection mode"
-
-    @property
-    def native_value(self) -> str:
-        """Return the current connection mode."""
-        if self.coordinator.api.using_cloud:
-            return "cloud"
-        return "local"
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        """Return extra attributes."""
-        return {
-            "fail_count": self.coordinator.api.fail_count,
-            "cloud_available": self.coordinator.api.has_cloud,
-        }

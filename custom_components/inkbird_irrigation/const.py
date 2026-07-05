@@ -38,8 +38,3 @@ CONF_DEVICE_ID = "device_id"
 CONF_LOCAL_KEY = "local_key"
 CONF_DEVICE_IP = "device_ip"
 CONF_DEVICE_NAME = "device_name"
-
-# Optional cloud fallback credentials
-CONF_CLOUD_API_KEY = "cloud_api_key"
-CONF_CLOUD_API_SECRET = "cloud_api_secret"
-CONF_CLOUD_API_REGION = "cloud_api_region"

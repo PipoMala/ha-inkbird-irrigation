@@ -28,10 +28,11 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# After a zone is commanded ON, trust the optimistic on-state for this long so a
-# poll that runs before the device has registered the start cannot momentarily
-# reset the zone to "off". Cleared as soon as the device confirms the zone.
-ZONE_TURN_ON_GRACE = 45  # seconds (~3 poll intervals)
+# After a command, the value we sent is trusted over device polls until the
+# device confirms it (a matching read) or this grace expires. This absorbs the
+# brief window where the controller has not yet reported a just-changed value,
+# which would otherwise make a switch appear to flip back on its own.
+COMMAND_GRACE = 45  # seconds (~3 poll intervals)
 
 
 class InkbirdDevice:
@@ -58,7 +59,48 @@ class InkbirdDevice:
         self.zone_active: dict[int, bool] = {z: False for z in range(1, NUM_ZONES + 1)}
         self.zone_countdown: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
         self.zone_duration: dict[int, int] = {z: 0 for z in range(1, NUM_ZONES + 1)}
-        self.zone_turn_on_grace_until: dict[int, float] = {z: 0 for z in range(1, NUM_ZONES + 1)}
+
+        # Post-command grace, keyed by DP string -> (expected_value, expiry).
+        self._pending: dict[str, tuple[Any, float]] = {}
+        # Debounce candidates for stable settings: attr -> value seen once.
+        self._pending_states: dict[str, Any] = {}
+
+    def confirm_command(self, dp: Any, value: Any) -> None:
+        """Trust ``value`` for data point ``dp`` until the device confirms it."""
+        self._pending[str(dp)] = (value, time.monotonic() + COMMAND_GRACE)
+
+    def _accept(self, dp_key: str, value: Any) -> bool:
+        """Whether a polled value should be applied, honouring command grace."""
+        pending = self._pending.get(dp_key)
+        if pending is None:
+            return True
+        expected, until = pending
+        if value == expected or time.monotonic() >= until:
+            # Device confirmed the command, or we waited long enough: accept.
+            self._pending.pop(dp_key, None)
+            return True
+        return False  # ignore a stale read that contradicts the command
+
+    def _commit_debounced(self, attr: str, new_value: Any, confirmed: bool = False) -> None:
+        """Apply a stable setting only once two consecutive polls agree.
+
+        The controller occasionally returns a stale/garbled value for enum and
+        boolean settings in a single poll (e.g. mode flapping auto/manual), so a
+        *changed* value must be seen twice before it is applied. ``confirmed``
+        commits immediately, for our own deliberate command writes.
+        """
+        if confirmed:
+            setattr(self, attr, new_value)
+            self._pending_states.pop(attr, None)
+            return
+        if new_value == getattr(self, attr):
+            self._pending_states.pop(attr, None)
+            return
+        if self._pending_states.get(attr) == new_value:
+            setattr(self, attr, new_value)
+            self._pending_states.pop(attr, None)
+        else:
+            self._pending_states[attr] = new_value
 
     def snapshot(self) -> "InkbirdDevice":
         """Return a copy with independent dicts for a consistent, thread-safe read.
@@ -80,52 +122,49 @@ class InkbirdDevice:
         new.zone_active = dict(self.zone_active)
         new.zone_countdown = dict(self.zone_countdown)
         new.zone_duration = dict(self.zone_duration)
-        new.zone_turn_on_grace_until = dict(self.zone_turn_on_grace_until)
         return new
 
-    def update_from_dps(self, dps: dict[str, Any]) -> None:
-        """Update device state from Tuya data points."""
-        now = time.monotonic()
+    def update_from_dps(self, dps: dict[str, Any], confirmed: bool = False) -> None:
+        """Update device state from Tuya data points.
+
+        Zone state honours a short post-command grace (so a just-started zone is
+        not momentarily shown as off). Stable settings (mode, power, rain, skip)
+        are debounced to absorb the controller's occasional garbled polls.
+        ``confirmed`` marks our own command writes so they apply immediately.
+        """
         for zone in range(1, NUM_ZONES + 1):
             dp_switch = str(DP_ZONE_SWITCH[zone])
             dp_countdown = str(DP_ZONE_COUNTDOWN[zone])
             dp_duration = str(DP_ZONE_DURATION[zone])
-            in_turn_on_grace = now < self.zone_turn_on_grace_until[zone]
 
             if dp_switch in dps:
-                new_switch = bool(dps[dp_switch])
-                if new_switch:
-                    # Device confirmed the zone is running: accept and end grace.
-                    self.zone_active[zone] = True
-                    self.zone_turn_on_grace_until[zone] = 0
-                elif not in_turn_on_grace:
-                    self.zone_active[zone] = False
-                # else: keep the optimistic True during the turn-on grace window
+                val = bool(dps[dp_switch])
+                if self._accept(dp_switch, val):
+                    self.zone_active[zone] = val
             if dp_countdown in dps:
-                self.zone_countdown[zone] = int(dps[dp_countdown])
+                val = int(dps[dp_countdown])
+                if self._accept(dp_countdown, val):
+                    self.zone_countdown[zone] = val
             if dp_duration in dps:
                 self.zone_duration[zone] = int(dps[dp_duration])
 
         if str(DP_SYSTEM_POWER) in dps:
-            self.system_power = dps[str(DP_SYSTEM_POWER)]
+            self._commit_debounced("system_power", dps[str(DP_SYSTEM_POWER)], confirmed)
         if str(DP_MODE) in dps:
-            self.mode = dps[str(DP_MODE)]
+            self._commit_debounced("mode", dps[str(DP_MODE)], confirmed)
         if str(DP_POWER_SWITCH) in dps:
-            self.power_switch = bool(dps[str(DP_POWER_SWITCH)])
+            self._commit_debounced("power_switch", bool(dps[str(DP_POWER_SWITCH)]), confirmed)
         if str(DP_SKIP_SCHEDULE) in dps:
-            self.skip_schedule = bool(dps[str(DP_SKIP_SCHEDULE)])
+            self._commit_debounced("skip_schedule", bool(dps[str(DP_SKIP_SCHEDULE)]), confirmed)
         if str(DP_RAIN_SENSOR_ENABLED) in dps:
-            self.rain_sensor_enabled = bool(dps[str(DP_RAIN_SENSOR_ENABLED)])
+            self._commit_debounced("rain_sensor_enabled", bool(dps[str(DP_RAIN_SENSOR_ENABLED)]), confirmed)
         if str(DP_SEASONAL_ADJUST) in dps:
             self.seasonal_adjust = int(dps[str(DP_SEASONAL_ADJUST)])
         if str(DP_AUTO_REMAINING) in dps:
             self.auto_remaining = int(dps[str(DP_AUTO_REMAINING)])
         if str(DP_ACTIVE_ZONE) in dps:
-            # DP 110 ("zonerun_state") reports the running zone, but its encoding
-            # (index vs bitmask) is not reliable across firmware revisions, so it
-            # is stored for reference only and is NOT used to derive per-zone
-            # on/off state. Zone state comes from the unambiguous per-zone switch
-            # DPs (1-6) handled above.
+            # DP 110 ("zonerun_state") is stored for reference only; zone on/off
+            # state comes from the per-zone switch DPs (1-6) handled above.
             self.active_zone = int(dps[str(DP_ACTIVE_ZONE)])
         if str(DP_QUEUED_ZONE) in dps:
             self.queued_zone = int(dps[str(DP_QUEUED_ZONE)])
@@ -185,6 +224,7 @@ class InkbirdAPI:
             if status and "dps" in status:
                 self.device.online = True
                 self.device.update_from_dps(status["dps"])
+                self._enforce_manual_mode(d, status["dps"])
                 _LOGGER.debug("Connected to Inkbird IIC-600 at %s", self._device_ip)
                 return True
             _LOGGER.error("No DPs returned from device at %s", self._device_ip)
@@ -221,6 +261,7 @@ class InkbirdAPI:
             if status and "dps" in status:
                 self.device.online = True
                 self.device.update_from_dps(status["dps"])
+                self._enforce_manual_mode(d, status["dps"])
                 return True
             self.last_update_error = f"Local status returned no dps: {status!r}"
         except Exception as exc:  # noqa: BLE001
@@ -238,6 +279,24 @@ class InkbirdAPI:
     def _release_device(self) -> None:
         """Release the command lock after the current command finishes."""
         self._command_lock.release()
+
+    def _enforce_manual_mode(self, d: tinytuya.Device, dps: dict[str, Any]) -> None:
+        """Keep the controller in manual mode.
+
+        This integration manages irrigation entirely from Home Assistant; the
+        device must never run its own programme. If a poll shows it in auto (or
+        any non-manual) mode, switch it straight back to manual. Callers must
+        already hold the command lock (or run before polling starts).
+        """
+        raw_mode = dps.get(str(DP_MODE))
+        if raw_mode is None or raw_mode == "manual":
+            return
+        try:
+            d.set_value(DP_MODE, "manual")
+            self.device.update_from_dps({str(DP_MODE): "manual"}, confirmed=True)
+            _LOGGER.info("Controller was in %r mode; forced back to manual", raw_mode)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.debug("Failed to force manual mode: %s", exc)
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Open a zone valve.
@@ -263,7 +322,8 @@ class InkbirdAPI:
                 str(DP_ZONE_SWITCH[zone]): True,
                 str(dp_countdown): duration_minutes,
             })
-            self.device.zone_turn_on_grace_until[zone] = time.monotonic() + ZONE_TURN_ON_GRACE
+            self.device.confirm_command(DP_ZONE_SWITCH[zone], True)
+            self.device.confirm_command(dp_countdown, duration_minutes)
             _LOGGER.debug("Zone %d turned ON for %d minutes", zone, duration_minutes)
             time.sleep(1)  # let the device process before the next command
             return True
@@ -278,8 +338,6 @@ class InkbirdAPI:
         """Close a zone valve."""
         if zone < 1 or zone > NUM_ZONES:
             return False
-        # Cancel any pending turn-on grace so this explicit stop is honoured.
-        self.device.zone_turn_on_grace_until[zone] = 0
         self._wait_for_device()
         try:
             d = self._ensure_connection()
@@ -290,6 +348,8 @@ class InkbirdAPI:
                 str(DP_ZONE_SWITCH[zone]): False,
                 str(DP_ZONE_COUNTDOWN[zone]): 0,
             })
+            self.device.confirm_command(DP_ZONE_SWITCH[zone], False)
+            self.device.confirm_command(DP_ZONE_COUNTDOWN[zone], 0)
             _LOGGER.debug("Zone %d turned OFF", zone)
             time.sleep(1)
             return True
@@ -308,7 +368,9 @@ class InkbirdAPI:
             if not d:
                 return False
             d.set_value(dp, value)
-            self.device.update_from_dps({str(dp): value})
+            # set_dp only drives stable settings; commit immediately so the UI
+            # reflects the change at once, then debounce guards later polls.
+            self.device.update_from_dps({str(dp): value}, confirmed=True)
             _LOGGER.debug("Set DP %d = %r", dp, value)
             return True
         except Exception as exc:  # noqa: BLE001

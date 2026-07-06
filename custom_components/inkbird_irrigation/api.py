@@ -224,7 +224,6 @@ class InkbirdAPI:
             if status and "dps" in status:
                 self.device.online = True
                 self.device.update_from_dps(status["dps"])
-                self._enforce_manual_mode(d, status["dps"])
                 _LOGGER.debug("Connected to Inkbird IIC-600 at %s", self._device_ip)
                 return True
             _LOGGER.error("No DPs returned from device at %s", self._device_ip)
@@ -261,7 +260,6 @@ class InkbirdAPI:
             if status and "dps" in status:
                 self.device.online = True
                 self.device.update_from_dps(status["dps"])
-                self._enforce_manual_mode(d, status["dps"])
                 return True
             self.last_update_error = f"Local status returned no dps: {status!r}"
         except Exception as exc:  # noqa: BLE001
@@ -279,24 +277,6 @@ class InkbirdAPI:
     def _release_device(self) -> None:
         """Release the command lock after the current command finishes."""
         self._command_lock.release()
-
-    def _enforce_manual_mode(self, d: tinytuya.Device, dps: dict[str, Any]) -> None:
-        """Keep the controller in manual mode.
-
-        This integration manages irrigation entirely from Home Assistant; the
-        device must never run its own programme. If a poll shows it in auto (or
-        any non-manual) mode, switch it straight back to manual. Callers must
-        already hold the command lock (or run before polling starts).
-        """
-        raw_mode = dps.get(str(DP_MODE))
-        if raw_mode is None or raw_mode == "manual":
-            return
-        try:
-            d.set_value(DP_MODE, "manual")
-            self.device.update_from_dps({str(DP_MODE): "manual"}, confirmed=True)
-            _LOGGER.info("Controller was in %r mode; forced back to manual", raw_mode)
-        except Exception as exc:  # noqa: BLE001
-            _LOGGER.debug("Failed to force manual mode: %s", exc)
 
     def turn_on_zone(self, zone: int, duration_minutes: int = 30) -> bool:
         """Open a zone valve.

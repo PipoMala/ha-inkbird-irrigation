@@ -12,15 +12,19 @@ NUM_ZONES = 6
 # Zone switches (bool): True = valve open
 DP_ZONE_SWITCH = {1: 1, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6}
 
-# Zone countdown timers (int): minutes remaining while a zone runs
+# Zone countdown timers (int) — Tuya "countdown_N" / 灌溉时间: the watering
+# duration/remaining time in MINUTES (0-180). Writing this (with the zone
+# switch on) is the device-native way to run a zone for N minutes.
 DP_ZONE_COUNTDOWN = {1: 13, 2: 14, 3: 15, 4: 16, 5: 17, 6: 18}
 
-# Zone elapsed time counters (int): minutes elapsed since zone started
+# Zone elapsed time (int) — Tuya "use_time_N" / 单次使用时间: minutes elapsed in
+# the current run (0-360).
 DP_ZONE_ELAPSED = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}
 
-# Zone duration settings — not yet discovered which DP controls this
-# The device appears to use a fixed 30-minute default
-DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}  # placeholder
+# There is no separate "zone duration" data point: duration is set via the
+# countdown DP above. This alias points at the elapsed-time DPs and is only used
+# to surface the "time elapsed" sensor.
+DP_ZONE_DURATION = {1: 25, 2: 26, 3: 27, 4: 28, 5: 29, 6: 30}
 
 # System DPs (codes confirmed against a real IIC-600-WIFI device)
 DP_SYSTEM_POWER = 40        # enum "on"/"off" — water_control (master valve)

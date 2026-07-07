@@ -10,14 +10,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import (
-    DOMAIN,
-    DP_POWER_SWITCH,
-    DP_RAIN_SENSOR_ENABLED,
-    DP_SKIP_SCHEDULE,
-    DP_SYSTEM_POWER,
-    NUM_ZONES,
-)
+from .const import DOMAIN, NUM_ZONES
 from .coordinator import InkbirdCoordinator
 from .entity import InkbirdEntity
 
@@ -62,33 +55,42 @@ class InkbirdZoneSwitch(InkbirdEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool:
-        """Return True if the zone valve is open.
-
-        The per-zone switch DP is the single source of truth for zone state.
-        """
-        return self.coordinator.data.zone_active.get(self._zone, False)
+        """Return True if the zone valve is open."""
+        # The device doesn't reliably report DP switch as True while running.
+        # Use countdown > 0 as the active indicator instead.
+        countdown = self.coordinator.api.device.zone_countdown.get(self._zone, 0)
+        switch_state = self.coordinator.api.device.zone_active.get(self._zone, False)
+        return switch_state or countdown > 0
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Open the zone valve for the configured duration.
-
-        The duration is used verbatim. Any seasonal scaling is applied on the HA
-        side (by the schedule automation or the card) before this is called, so
-        the integration never re-scales it and never writes the device seasonal
-        DP.
-        """
-        duration = self.coordinator.zone_durations.get(self._zone, 30)
-        _LOGGER.debug("Zone %d turn_on with duration=%d min", self._zone, duration)
+        """Open the zone valve with the configured duration."""
+        from .number import _zone_durations
+        entry_id = self.coordinator.entry.entry_id
+        duration = _zone_durations.get(entry_id, {}).get(self._zone, 30)
+        _LOGGER.debug("Zone %d turn_on with duration=%d", self._zone, duration)
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_on_zone, self._zone, duration
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        # Optimistic update: mutate the shared device model then broadcast to
+        # ALL coordinator-linked entities (switches + sensors) at once so the
+        # countdown sensor also updates immediately without waiting for the
+        # next scheduled poll.
+        self.coordinator.api.device.zone_active[self._zone] = True
+        self.coordinator.api.device.zone_countdown[self._zone] = duration
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Close the zone valve."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.turn_off_zone, self._zone
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        # Optimistic update: broadcast to all coordinator-linked entities so
+        # the countdown sensor drops to 0 immediately.
+        self.coordinator.api.device.zone_active[self._zone] = False
+        self.coordinator.api.device.zone_countdown[self._zone] = 0
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
+        await self.coordinator.async_request_refresh()
 
 
 class InkbirdMainValveSwitch(InkbirdEntity, SwitchEntity):
@@ -104,21 +106,21 @@ class InkbirdMainValveSwitch(InkbirdEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if main valve is on."""
-        return self.coordinator.data.system_power == "on"
+        return self.coordinator.api.device.system_power == "on"
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on main valve."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_SYSTEM_POWER, "on"
+            self.coordinator.api.set_dp, 40, "on"
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off main valve."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_SYSTEM_POWER, "off"
+            self.coordinator.api.set_dp, 40, "off"
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
 
 class InkbirdPowerSwitch(InkbirdEntity, SwitchEntity):
@@ -134,21 +136,21 @@ class InkbirdPowerSwitch(InkbirdEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if power is on."""
-        return self.coordinator.data.power_switch
+        return self.coordinator.api.device.power_switch
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_POWER_SWITCH, True
+            self.coordinator.api.set_dp, 107, True
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_POWER_SWITCH, False
+            self.coordinator.api.set_dp, 107, False
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
 
 class InkbirdRainSensorSwitch(InkbirdEntity, SwitchEntity):
@@ -164,21 +166,21 @@ class InkbirdRainSensorSwitch(InkbirdEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if rain sensor is enabled."""
-        return self.coordinator.data.rain_sensor_enabled
+        return self.coordinator.api.device.rain_sensor_enabled
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable rain sensor."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_RAIN_SENSOR_ENABLED, True
+            self.coordinator.api.set_dp, 102, True
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable rain sensor."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_RAIN_SENSOR_ENABLED, False
+            self.coordinator.api.set_dp, 102, False
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
 
 class InkbirdSkipScheduleSwitch(InkbirdEntity, SwitchEntity):
@@ -194,18 +196,18 @@ class InkbirdSkipScheduleSwitch(InkbirdEntity, SwitchEntity):
     @property
     def is_on(self) -> bool:
         """Return True if schedule is being skipped."""
-        return self.coordinator.data.skip_schedule
+        return self.coordinator.api.device.skip_schedule
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Skip schedule."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_SKIP_SCHEDULE, True
+            self.coordinator.api.set_dp, 43, True
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Resume schedule."""
         await self.hass.async_add_executor_job(
-            self.coordinator.api.set_dp, DP_SKIP_SCHEDULE, False
+            self.coordinator.api.set_dp, 43, False
         )
-        self.coordinator.async_set_updated_data(self.coordinator.api.device.snapshot())
+        await self.coordinator.async_request_refresh()

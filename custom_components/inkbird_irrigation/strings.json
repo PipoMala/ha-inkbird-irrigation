@@ -8,15 +8,7 @@
           "device_name": "Device name",
           "device_id": "Device ID",
           "local_key": "Local Key",
-          "device_ip": "Device IP address",
-          "cloud_api_key": "Cloud API key (optional)",
-          "cloud_api_secret": "Cloud API secret (optional)",
-          "cloud_api_region": "Cloud API region (optional)"
-        },
-        "data_description": {
-          "cloud_api_key": "Tuya IoT Cloud Access ID, used only as a fallback when the local connection is unavailable.",
-          "cloud_api_secret": "Tuya IoT Cloud Access Secret.",
-          "cloud_api_region": "Tuya datacenter region code (e.g. eu, us, cn, in)."
+          "device_ip": "Device IP address"
         }
       }
     },

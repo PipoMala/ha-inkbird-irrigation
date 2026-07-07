@@ -413,6 +413,10 @@ class InkbirdAPI:
             if not d:
                 return False
             d.set_value(dp, value)
+            # Reflect the commanded value locally at once so the UI doesn't show
+            # a stale state until the next poll (the device can take a few
+            # seconds to report the new value on its extended data points).
+            self.device.update_from_dps({str(dp): value})
             _LOGGER.debug("Set DP %d = %r", dp, value)
             return True
         except Exception as exc:  # noqa: BLE001

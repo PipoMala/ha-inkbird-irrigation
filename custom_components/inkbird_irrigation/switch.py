@@ -113,14 +113,14 @@ class InkbirdMainValveSwitch(InkbirdEntity, SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 40, "on"
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off main valve."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 40, "off"
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
 
 class InkbirdPowerSwitch(InkbirdEntity, SwitchEntity):
@@ -143,14 +143,14 @@ class InkbirdPowerSwitch(InkbirdEntity, SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 107, True
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn off."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 107, False
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
 
 class InkbirdRainSensorSwitch(InkbirdEntity, SwitchEntity):
@@ -173,14 +173,14 @@ class InkbirdRainSensorSwitch(InkbirdEntity, SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 102, True
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Disable rain sensor."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 102, False
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
 
 class InkbirdSkipScheduleSwitch(InkbirdEntity, SwitchEntity):
@@ -203,11 +203,11 @@ class InkbirdSkipScheduleSwitch(InkbirdEntity, SwitchEntity):
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 43, True
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Resume schedule."""
         await self.hass.async_add_executor_job(
             self.coordinator.api.set_dp, 43, False
         )
-        await self.coordinator.async_request_refresh()
+        self.coordinator.async_set_updated_data(self.coordinator.api.device)
